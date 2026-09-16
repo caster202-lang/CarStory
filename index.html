@@ -19,6 +19,7 @@
     --ink-faint: #a0a6ae;
     --warn: #e0912a;
     --danger: #e2564a;
+    --danger-track: #f6cfca;
     --shadow: 0 1px 2px rgba(16,24,40,.04), 0 6px 16px rgba(16,24,40,.06);
     --accent: hsl(205 40% 40%);
     --accent-soft: hsl(205 46% 50% / 0.10);
@@ -37,6 +38,7 @@
     --ink-faint: #666d77;
     --warn: #e5a83f;
     --danger: #e86b5e;
+    --danger-track: #4a2723;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.28);
     --accent-ink: #111317;
   }
@@ -180,6 +182,8 @@
     margin-top:9px;
     overflow:hidden;
   }
+  /* 교체 시기가 지나면 게이지가 비고, 빈 칸 자체가 붉게 보인다 */
+  .gauge.spent { background: var(--danger-track); }
   .gauge i { display:block; height:100%; border-radius:4px; background: var(--accent); }
   .gauge i.warn { background: var(--warn); }
   .gauge i.danger { background: var(--danger); }
@@ -1294,8 +1298,9 @@ function maintStatusOf(it){
   const r = ratios.length ? Math.min.apply(null, ratios) : null;
 
   if ((kmLeft != null && kmLeft <= 0) || (dayLeft != null && dayLeft <= 0)){
-    // 게이지는 가득 채우되(pct 100), 순서는 가장 급하게(rank 음수)
-    return { cls:'danger', pct:100, rank: r != null ? r : -1 };
+    // 다 썼으니 게이지는 비운다(pct 0). 빈 칸이 붉게 보여서 눈에 띈다.
+    // 순서는 가장 급하게(rank 음수).
+    return { cls:'danger', pct:0, rank: r != null ? r : -1 };
   }
   // 남은 비율이 10% 밑이거나, 1,500km 또는 30일 밑이면 "곧 교체"
   const soon = (r != null && r <= 0.1) || (kmLeft != null && kmLeft <= 1500) || (dayLeft != null && dayLeft <= 30);
@@ -1324,7 +1329,8 @@ function maintRow(it, clickable){
     : '<div class="row-item static">';
   // 정상이면 항목 고유 색, 주의·위험이면 경고색이 게이지를 덮는다
   const bar = s.pct != null
-    ? '<div class="gauge"><i class="' + (s.cls === 'ok' ? '' : s.cls) + '" style="width:' + s.pct + '%' +
+    ? '<div class="gauge' + (s.cls === 'danger' ? ' spent' : '') + '">' +
+      '<i class="' + (s.cls === 'ok' ? '' : s.cls) + '" style="width:' + s.pct + '%' +
       (s.cls === 'ok' ? ';background:' + itemColor(it.name) : '') + '"></i></div>'
     : '<div class="row-sub">마지막 교체 시점을 입력하면 남은 양이 보여요</div>';
   return open +
@@ -1610,7 +1616,11 @@ function selfTest(){
     a(maintStatusOf({intervalKm:45000, lastKm:0}).pct === 56, '남은 비율이 게이지 폭이 된다');
     // 시기가 지난 항목: 게이지는 가득 차지만 순서로는 가장 급해야 한다
     const 지남 = maintStatusOf({intervalKm:20000, intervalMonth:12, lastKm:18200, lastDate:'2020-01-01'});
-    a(지남.cls === 'danger' && 지남.pct === 100, '지난 항목은 게이지 가득');
+    a(지남.cls === 'danger' && 지남.pct === 0, '시기가 지나면 게이지가 비어야 함');
+    // 게이지는 "남은 양"이다 — 막 교체했으면 가득, 쓸수록 줄고, 다 쓰면 빈다
+    a(maintStatusOf({intervalKm:10000, lastKm:20000}).pct === 100, '막 교체한 항목은 게이지 가득');
+    a(maintStatusOf({intervalKm:10000, lastKm:15000}).pct === 50, '절반 남으면 게이지 절반');
+    a(maintStatusOf({intervalKm:10000, lastKm:11500}).pct === 15, '조금 남으면 게이지도 조금');
     a(지남.rank < maintStatusOf({intervalKm:10000, lastKm:15000}).rank, '지난 항목이 멀쩡한 항목보다 앞에 온다');
     a(지남.rank < maintStatusOf({intervalKm:10000, lastKm:11500}).rank, '지난 항목이 곧 교체 항목보다도 앞에 온다');
     // 만땅(10,000km) → 부분주유 20L → 만땅(10,500km) : 500km / (20+30)L = 10.0km/L
