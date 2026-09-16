@@ -268,6 +268,15 @@
   .check input { width:18px; height:18px; accent-color: var(--accent); }
   .hint { font-size:12px; line-height:1.55; color: var(--ink-dim); margin:0 0 14px; }
 
+  /* 백업이 오래됐을 때만 홈 맨 위에 뜨는 줄 */
+  .backup-note {
+    display:block; width:100%; text-align:left; cursor:pointer;
+    border:1px solid var(--warn); border-radius: var(--radius);
+    background: color-mix(in srgb, var(--warn) 12%, transparent);
+    color: var(--ink); font-family: var(--font); font-size:12.5px; line-height:1.5;
+    padding:11px 14px; margin-bottom:14px;
+  }
+
   /* ---------- 카드 (차량 화면) ---------- */
   .card {
     background: var(--surface);
@@ -468,6 +477,7 @@
 
     <!-- 홈 -->
     <section class="screen active" id="screen-home">
+      <div id="backupNotice"></div>
       <div class="cluster">
         <div class="cluster-head">
           <span id="homeBadgeWrap"></span>
@@ -508,6 +518,10 @@
       <div class="sec">
         <div class="sec-label">소모품 현황</div>
         <div id="maintList"></div>
+      </div>
+      <div class="sec">
+        <div class="sec-label">교체 이력</div>
+        <div id="maintLogList"></div>
       </div>
     </section>
 
@@ -837,14 +851,14 @@ const _UK_JLR = { official:{km:26000, month:12}, local:{km:15000, month:12},
   note:'공식 서비스 간격이 약 16,000마일(≈26,000km)/1년으로 긴 편. 국내 주행 조건에선 1.5만km로 단축 권장. ※ 참고값이라 차량 매뉴얼로 꼭 확인하세요.' };
 const _US_FORD = { official:{km:16000, month:12}, local:{km:10000, month:12},
   note:'북미 기준 약 10,000마일(≈16,000km)/1년. 국내 시내 주행 위주면 1만km 권장. ※ 참고값이라 차량 매뉴얼로 꼭 확인하세요.' };
-const _US_GM = { official:{km:15000, month:12}, local:{km:10000, month:12},
-  note:'GM 오일 수명 모니터가 계산해서 알려주는 방식. 계기판에 교체 표시가 뜨면 거리와 상관없이 교체. ※ 참고값이라 차량 매뉴얼로 꼭 확인하세요.' };
-const _FR_STELLANTIS = { official:{km:25000, month:24}, local:{km:15000, month:12},
-  note:'스텔란티스 디젤(BlueHDi)은 매뉴얼상 2~3만km로 긴 편. 국내에선 1.5만km 권장. ※ 참고값이라 차량 매뉴얼로 꼭 확인하세요.' };
+const _US_GM = { official:{km:12000, month:12}, local:{km:10000, month:12},
+  note:'GM 오일 수명 모니터가 계산해서 알려주는 방식. 다만 거리로는 7,500마일(≈12,000km)/1년이 상한이라, 계기판에 여유가 남아 있어도 이 선을 넘기지 않습니다.' };
+const _FR_STELLANTIS = { official:{km:15000, month:12}, local:{km:10000, month:12},
+  note:'BlueHDi 디젤·퓨어테크 가솔린 모두 15,000km/1년이 기본입니다. 25,000km/2년은 가솔린 롱라이프 조건에만 해당하니 내 차가 어느 쪽인지 확인하세요.' };
 const _KR_HYUNDAI = { official:{km:15000, month:12}, local:{km:8000, month:12},
   note:'매뉴얼상 일반 조건은 15,000km/1년, 가혹조건(시내 정체·짧은 거리 반복 주행)은 7,500km/6개월. 국내 주행은 대부분 가혹조건에 해당. ※ 참고값이라 차량 매뉴얼로 꼭 확인하세요.' };
-const _JP_NISSAN = { official:{km:10000, month:12}, local:{km:8000, month:12},
-  note:'국내 철수 브랜드라 정비는 사설 전문점 위주. 부품 수급을 고려해 주기를 짧게 가져가는 편. ※ 참고값이라 차량 매뉴얼로 꼭 확인하세요.' };
+const _JP_NISSAN = { official:{km:12000, month:6}, local:{km:8000, month:6},
+  note:'매뉴얼 기준이 7,500마일(≈12,000km)/6개월로, 다른 브랜드와 달리 개월 수가 짧습니다. 국내 철수 브랜드라 정비는 사설 전문점 위주.' };
 
 const BRAND_OIL = {
   // --- 기획서 6.1 조사 자료 기준 ---
@@ -1230,6 +1244,7 @@ function resetAll(){
   localStorage.removeItem(KEYS.items);
   localStorage.removeItem(KEYS.fuel);
   localStorage.removeItem(KEYS.logs);
+  localStorage.removeItem(BACKUP_KEY);
   vehicle = null; items = []; fuelLogs = []; maintLogs = [];
   setBrand('');
   document.getElementById('vMakeModel').value = '';
@@ -1240,15 +1255,66 @@ function resetAll(){
 }
 
 // ---------- 데이터 백업 (localStorage 유실 대비) ----------
+// 마지막으로 백업한 날. 데이터가 아니라 습관에 대한 기록이라 KEYS와 따로 둔다.
+const BACKUP_KEY = 'mile_backup';
+const BACKUP_DAYS = 30;
+function markBackedUp(){
+  try { localStorage.setItem(BACKUP_KEY, todayStr()); } catch(e){}
+  renderAll();
+}
+function lastBackupDate(){
+  try { return localStorage.getItem(BACKUP_KEY); } catch(e){ return null; }
+}
+// 기록이 있는데 백업이 없거나 오래됐을 때만 말을 건다. 그 밖엔 조용히 있는다.
+function backupNotice(기록수, 마지막백업, 오늘){
+  if (!기록수) return null;
+  if (!마지막백업) return '아직 백업한 적이 없어요. 브라우저 기록을 지우면 되살릴 수 없습니다.';
+  const 지난날 = Math.round((new Date(오늘) - new Date(마지막백업)) / 86400000);
+  if (지난날 < BACKUP_DAYS) return null;
+  return '마지막 백업이 ' + 지난날 + '일 전이에요. 차량 탭에서 내보내기 해주세요.';
+}
+function renderBackupNotice(){
+  const el = document.getElementById('backupNotice');
+  if (!el) return;
+  const 기록수 = items.length + fuelLogs.length + maintLogs.length;
+  const msg = backupNotice(기록수, lastBackupDate(), todayStr());
+  el.innerHTML = msg
+    ? '<button class="backup-note" onclick="switchScreen(\'vehicle\')">' + msg + '</button>'
+    : '';
+}
+// 지금은 차량이 한 대뿐이지만, 백업 파일은 여러 대를 담을 수 있는 모양으로 내보낸다.
+// 나중에 다중 차량을 넣을 때 예전 백업을 고쳐 읽는 코드를 따로 쓰지 않으려고 미리 붙여둔다.
+function vehicleIdOf(v){
+  if (!v) return null;
+  if (!v.id) v.id = 'v' + Date.now();
+  return v.id;
+}
+function backupPayload(){
+  const vid = vehicleIdOf(vehicle);
+  const 붙이기 = list => list.map(x => ({...x, vehicleId: x.vehicleId || vid}));
+  return {
+    app:'카스토리', version:3, exportedAt:new Date().toISOString(),
+    vehicles: vehicle ? [vehicle] : [],
+    vehicle,                      // 3판을 모르는 예전 앱도 읽을 수 있게 남겨둔다
+    items: 붙이기(items), fuelLogs: 붙이기(fuelLogs), maintLogs: 붙이기(maintLogs)
+  };
+}
+// 2판(차량 id 없음)과 3판을 모두 같은 모양으로 펴서 돌려준다
+function normalizeBackup(data){
+  const v = (Array.isArray(data.vehicles) && data.vehicles[0]) || data.vehicle || null;
+  const vid = vehicleIdOf(v);
+  const 붙이기 = list => (Array.isArray(list) ? list : []).map(x => ({...x, vehicleId: x.vehicleId || vid}));
+  return { vehicle: v, items: 붙이기(data.items), fuelLogs: 붙이기(data.fuelLogs), maintLogs: 붙이기(data.maintLogs) };
+}
 function exportData(){
-  const payload = { app:'카스토리', version:2, exportedAt:new Date().toISOString(), vehicle, items, fuelLogs, maintLogs };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+  const blob = new Blob([JSON.stringify(backupPayload(), null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = '카스토리-백업-' + new Date().toISOString().slice(0,10) + '.json';
   a.click();
   URL.revokeObjectURL(url);
+  markBackedUp();
 }
 function importData(input){
   const file = input.files && input.files[0];
@@ -1264,11 +1330,13 @@ function importData(input){
       return;
     }
     if (!confirm('지금 기기에 있는 기록을 백업 파일 내용으로 덮어쓸까요?')) return;
-    vehicle = data.vehicle || null;
-    items = data.items;
-    fuelLogs = data.fuelLogs;
-    maintLogs = Array.isArray(data.maintLogs) ? data.maintLogs : [];  // 예전 백업엔 없다
+    const 편 = normalizeBackup(data);   // 2판 백업엔 차량 id도 교체 이력도 없다
+    vehicle = 편.vehicle;
+    items = 편.items;
+    fuelLogs = 편.fuelLogs;
+    maintLogs = 편.maintLogs;
     save(KEYS.vehicle, vehicle); save(KEYS.items, items); save(KEYS.fuel, fuelLogs); save(KEYS.logs, maintLogs);
+    markBackedUp();   // 방금 불러온 파일이 곧 최신 백업이다
     renderAll();
     alert('불러오기 완료!');
   };
@@ -1435,6 +1503,13 @@ function fillToday(){
   document.getElementById('maintCost').focus();
 }
 
+// 이력 한 줄 = "그 항목을 그날 교체했다"는 사실 하나.
+// 같은 항목·같은 날짜를 다시 저장한 건 새 교체가 아니라 정정이므로 줄을 늘리지 않고 고친다.
+function recordMaintLog(entry){
+  const i = maintLogs.findIndex(l => l.name === entry.name && l.date === entry.date);
+  if (i !== -1) maintLogs[i] = {...maintLogs[i], odo: entry.odo, cost: entry.cost};
+  else maintLogs.push(entry);
+}
 function saveMaintItem(){
   const name = document.getElementById('maintName').value.trim();
   if (!name) { alert('항목명을 입력해주세요'); return; }
@@ -1456,6 +1531,8 @@ function saveMaintItem(){
   const targetId = editId || (dup ? dup.id : null);
   const before = targetId ? items.find(i => i.id === targetId) : null;
   const 교체일이_새로생김 = !!data.lastDate && data.lastDate !== (before ? before.lastDate : null);
+  // 날짜는 그대로 두고 비용만 고치는 경우가 있다. 이때도 이력을 손봐야 그래프 금액이 맞는다.
+  const 비용이_바뀜 = !!data.lastDate && !!before && (data.lastCost || 0) !== (before.lastCost || 0);
 
   if (targetId){
     const idx = items.findIndex(i => i.id === targetId);
@@ -1474,13 +1551,13 @@ function saveMaintItem(){
 
   // 교체일이 새로 생겼거나 바뀌었을 때만 이력을 남긴다.
   // 주기만 고치는 경우에는 쌓이지 않는다.
-  if (교체일이_새로생김){
+  if (교체일이_새로생김 || 비용이_바뀜){
     const stamp = Date.now();
-    maintLogs.push({ id:'L'+stamp, name: data.name, date: data.lastDate, odo: data.lastKm, cost: data.lastCost || 0 });
+    recordMaintLog({ id:'L'+stamp, name: data.name, date: data.lastDate, odo: data.lastKm, cost: data.lastCost || 0 });
     // 같이 교체한 항목도 이력에 남기되, 비용은 위에서 합쳐 적었으므로 0으로 둔다
     alsoIds.forEach((aid, n) => {
       const it = items.find(i => i.id === aid);
-      if (it) maintLogs.push({ id:'L'+stamp+'_'+n, name: it.name, date: data.lastDate, odo: data.lastKm, cost: 0 });
+      if (it) recordMaintLog({ id:'L'+stamp+'_'+n, name: it.name, date: data.lastDate, odo: data.lastKm, cost: 0 });
     });
     save(KEYS.logs, maintLogs);
   }
@@ -1601,6 +1678,38 @@ function renderMaintList(){
 
 // ---------- 주유 ----------
 const isFull = f => f.full !== false; // 예전 기록(필드 없음)은 가득 주유로 간주
+// ---------- 교체 이력 ----------
+// 소모품 항목은 "마지막 교체"만 들고 있다. 그 전에 언제 얼마를 썼는지는 여기서만 보고 지울 수 있다.
+function renderMaintLogList(){
+  const el = document.getElementById('maintLogList');
+  if (!el) return;
+  if (!maintLogs.length){
+    el.innerHTML = '<div class="empty">교체를 기록하면 여기에 쌓여요</div>';
+    return;
+  }
+  const desc = [...maintLogs].sort((a,b)=> String(b.date).localeCompare(String(a.date)));
+  el.innerHTML = '<div class="list">' + desc.map(l=>{
+    const sub = [];
+    if (l.odo != null) sub.push(l.odo.toLocaleString() + 'km');
+    sub.push(l.cost ? l.cost.toLocaleString() + '원' : '비용 기록 없음');
+    return '<div class="row-item static">' +
+      '<div class="row-main">' + itemChip(l.name) +
+      '<div class="row-text">' +
+      '<div class="row-top"><span class="row-name">' + esc(l.name) + '</span>' +
+      '<span class="row-meta">' + l.date + '</span></div>' +
+      '<div class="row-top" style="margin-top:2px">' +
+      '<span class="row-sub">' + sub.join(' · ') + '</span>' +
+      '<button class="x-btn" onclick="deleteMaintLog(\'' + l.id + '\')">삭제</button></div>' +
+      '</div></div></div>';
+  }).join('') + '</div>';
+}
+// 이력만 지운다. 소모품의 "마지막 교체"는 그대로 두어야 교체 시기 계산이 흔들리지 않는다.
+function deleteMaintLog(id){
+  if (!confirm('이 교체 이력을 지울까요?\n유지비 그래프에서 빠집니다. 소모품의 마지막 교체 기록은 그대로 남아요.')) return;
+  maintLogs = maintLogs.filter(l => l.id !== id);
+  save(KEYS.logs, maintLogs);
+  renderAll();
+}
 function sortedFuel(){ // 날짜 오름차순, 같은 날이면 주행거리 순
   return [...fuelLogs].sort((a,b)=> String(a.date).localeCompare(String(b.date)) || a.odo - b.odo);
 }
@@ -1663,7 +1772,7 @@ function renderFuelList(){
     if (!isFull(f)) parts.push('부분 ' + words().행위);
     return '<div class="row-item static">' +
       '<div class="row-top"><span class="row-name">' + f.date + '</span>' +
-      '<span class="row-meta">' + (eff ? eff + 'km/L' : '—') + '</span></div>' +
+      '<span class="row-meta">' + (eff ? eff + words().효율단위 : '—') + '</span></div>' +
       '<div class="row-top" style="margin-top:4px">' +
       '<span class="row-sub">' + parts.join(' · ') + '</span>' +
       '<button class="x-btn" onclick="deleteFuel(\'' + f.id + '\')">삭제</button></div>' +
@@ -1894,7 +2003,7 @@ function renderHome(){
     const eff = fuelEfficiencyFor(last);
     fuelEl.innerHTML = '<div class="list"><div class="row-item static">' +
       '<div class="row-top"><span class="row-name">' + last.date + '</span>' +
-      '<span class="row-meta">' + (eff ? eff + 'km/L' : last.odo.toLocaleString() + 'km') + '</span></div>' +
+      '<span class="row-meta">' + (eff ? eff + words().효율단위 : last.odo.toLocaleString() + 'km') + '</span></div>' +
       '<div class="row-sub">' + last.liters + words().단위 + ' · ' + last.cost.toLocaleString() + '원</div>' +
       '</div></div>';
   }
@@ -1907,6 +2016,8 @@ function renderAll(){
   renderCharts();
   renderVehicleForm();
   renderMaintList();
+  renderMaintLogList();
+  renderBackupNotice();
   renderFuelList();
   renderHome();
 }
@@ -2125,6 +2236,71 @@ function selfTest(){
     a(alsoCandidates('a', '엔진오일').length === 1, '수정 중인 항목 자신도 빠져야 함');
     a(alsoCandidates('', '와이퍼').length === 2, '겹치지 않으면 모두 후보');
     items = 원래items;
+    // 교체 비용을 잘못 적었다가 고치는 흐름. 이력이 따로 놀면 유지비 그래프가 틀어진다.
+    const 원항목비용 = items, 원이력비용 = maintLogs;
+    items = []; maintLogs = [];
+    document.getElementById('alsoList').innerHTML = '';
+    const 칸 = (id, v) => { document.getElementById(id).value = v; };
+    const 오일입력 = (비용, editId) => {
+      칸('maintEditId', editId || '');
+      칸('maintName', '엔진오일'); 칸('maintIntervalKm', '10000'); 칸('maintIntervalMonth', '12');
+      칸('maintLastKm', '10000'); 칸('maintLastDate', '2026-09-01');
+      칸('maintCost', 비용); 칸('maintNote', '');
+      saveMaintItem();
+    };
+    오일입력('85000');
+    a(maintLogs.length === 1 && maintLogs[0].cost === 85000, '교체를 기록하면 이력이 한 줄 쌓인다');
+    오일입력('95000', items[0].id);
+    a(maintLogs.length === 1, '날짜가 그대로면 이력이 새로 늘지 않는다');
+    a(maintLogs[0].cost === 95000, '고친 비용이 이력에도 반영돼야 한다');
+    items = 원항목비용; maintLogs = 원이력비용;
+    // 이력이 보이지 않는 곳에만 쌓이면 잘못 넣어도 손댈 수가 없다
+    const 원이력화면 = maintLogs;
+    maintLogs = [
+      { id:'L9', name:'엔진오일', date:'2026-09-01', odo:10000, cost:85000 },
+      { id:'L8', name:'와이퍼', date:'2026-07-01', odo:8000, cost:20000 }
+    ];
+    renderMaintLogList();
+    const 이력화면 = document.getElementById('maintLogList').innerHTML;
+    a(이력화면.indexOf('엔진오일') !== -1 && 이력화면.indexOf('85,000원') !== -1, '교체 이력이 화면에 보여야 함');
+    a(이력화면.indexOf('엔진오일') < 이력화면.indexOf('와이퍼'), '최근 교체가 위에');
+    const 원confirm = window.confirm;
+    window.confirm = () => true;
+    deleteMaintLog('L9');
+    window.confirm = 원confirm;
+    a(maintLogs.length === 1 && maintLogs[0].id === 'L8', '이력 한 줄을 지울 수 있어야 함');
+    maintLogs = 원이력화면;
+    // 기록이 브라우저 안에만 있으니, 백업이 오래되면 앱이 먼저 알려줘야 한다
+    a(backupNotice(0, null, '2026-09-16') === null, '기록이 없으면 백업을 조르지 않는다');
+    a(backupNotice(3, null, '2026-09-16') !== null, '기록이 있는데 백업한 적이 없으면 알린다');
+    a(backupNotice(3, '2026-09-10', '2026-09-16') === null, '최근에 백업했으면 알리지 않는다');
+    a(backupNotice(3, '2026-08-01', '2026-09-16').indexOf('46일 전') !== -1, '오래되면 며칠 지났는지 알린다');
+    // 2026-09-16 재검증으로 바로잡은 값들 (기획서 6.1.1 참고)
+    a(BRAND_OIL['쉐보레'].official.km === 12000, 'GM 공식 상한은 7,500마일(≈12,000km)');
+    a(BRAND_OIL['푸조'].official.km === 15000 && BRAND_OIL['푸조'].official.month === 12, '푸조·시트로엥 BlueHDi는 15,000km/12개월');
+    a(BRAND_OIL['닛산'].official.month === 6, '닛산·인피니티 공식 주기는 6개월');
+    a(Object.keys(BRAND_OIL).every(b => BRAND_OIL[b].local.km <= BRAND_OIL[b].official.km), '국내 권장은 공식 주기보다 길 수 없다');
+    // 백업 파일은 나중에 여러 대를 지원할 수 있는 모양으로 내보낸다
+    const 원차백업 = vehicle, 원항목백업 = items, 원주유백업 = fuelLogs, 원이력백업 = maintLogs;
+    vehicle = { id:'v1', brand:'BMW', name:'320d', fuel:'diesel', year:2021, odo:20000 };
+    items = [{ id:'m1', name:'엔진오일' }];
+    fuelLogs = [{ id:'f1', date:'2026-09-01', liters:40, cost:70000, odo:20000, full:true }];
+    maintLogs = [{ id:'L1', name:'엔진오일', date:'2026-09-01', odo:20000, cost:85000 }];
+    const 백업 = backupPayload();
+    a(백업.version === 3, '백업은 3판 형식으로 나간다');
+    a(백업.vehicles.length === 1 && 백업.vehicles[0].id === 'v1', '차량을 목록으로 담는다');
+    a(백업.vehicle && 백업.vehicle.id === 'v1', '예전 판이 읽을 수 있게 vehicle도 남긴다');
+    a(백업.items.every(i => i.vehicleId === 'v1'), '소모품에 차량 id가 붙는다');
+    a(백업.fuelLogs.every(f => f.vehicleId === 'v1'), '주유 기록에 차량 id가 붙는다');
+    a(백업.maintLogs.every(l => l.vehicleId === 'v1'), '교체 이력에 차량 id가 붙는다');
+    // 차량 id가 없던 시절의 백업도 그대로 읽혀야 한다
+    const 옛백업 = { version:2, vehicle:{ brand:'기아', name:'K5', odo:100 },
+                     items:[{ id:'m9', name:'와이퍼' }], fuelLogs:[], maintLogs:[] };
+    const 읽은것 = normalizeBackup(옛백업);
+    a(!!읽은것.vehicle.id, '예전 백업을 읽으면 차량에 id를 만들어 붙인다');
+    a(읽은것.items[0].vehicleId === 읽은것.vehicle.id, '예전 기록에도 그 차량 id를 채운다');
+    a(normalizeBackup(백업).vehicle.id === 'v1', '3판 백업은 담긴 id를 그대로 쓴다');
+    vehicle = 원차백업; items = 원항목백업; fuelLogs = 원주유백업; maintLogs = 원이력백업;
     a(new Set(sampleData('gas').items.map(i => i.name)).size === sampleData('gas').items.length, '예시 데이터에 같은 이름이 없어야 함');
     // 유종마다 예시가 그 차에 맞는 항목만 담아야 한다
     ['gas','diesel','hybrid','ev','lpg'].forEach(f => {
@@ -2142,6 +2318,20 @@ function selfTest(){
     a(!isEVCar() && words().행위 === '주유' && words().단위 === 'L' && words().효율 === '연비', '내연기관은 주유·L·연비');
     vehicle = { brand:'BMW', name:'i4', fuel:'ev', odo:1000 };
     a(isEVCar(), '내연기관 브랜드의 전기차도 유종으로 알아본다');
+    // 말만 바뀌는 게 아니라 목록·홈에 찍히는 단위까지 따라가야 한다
+    const 원주유2 = fuelLogs;
+    vehicle = { brand:'테슬라', name:'Model 3', fuel:'ev', odo:11000 };
+    fuelLogs = [
+      { id:'e1', date:'2026-08-01', liters:50, cost:10000, odo:10000, full:true },
+      { id:'e2', date:'2026-09-01', liters:50, cost:10000, odo:11000, full:true }
+    ];
+    renderFuelList();
+    renderHome();
+    const 충전목록 = document.getElementById('fuelList').innerHTML;
+    const 홈충전 = document.getElementById('homeFuel').innerHTML;
+    a(충전목록.indexOf('km/kWh') !== -1 && 충전목록.indexOf('km/L') === -1, '충전 목록에 전비 단위(km/kWh)');
+    a(홈충전.indexOf('km/kWh') !== -1 && 홈충전.indexOf('km/L') === -1, '홈 최근 충전에도 전비 단위');
+    fuelLogs = 원주유2;
     vehicle = 원차2;
     a(sampleData('diesel').items.some(it => it.name === '요소수'), '디젤 예시엔 요소수가 있어야 함');
     // 인쇄물 — 예시 데이터로 세 구역이 모두 채워지는지
