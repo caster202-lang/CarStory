@@ -1414,35 +1414,31 @@ function backupNotice(기록수, 마지막백업, 오늘){
 function renderBackupNotice(){
   const el = document.getElementById('backupNotice');
   if (!el) return;
-  const 기록수 = items.length + fuelLogs.length + maintLogs.length;
+  const 기록수 = allItems.length + allFuel.length + allLogs.length;
   const msg = backupNotice(기록수, lastBackupDate(), todayStr());
   el.innerHTML = msg
     ? '<button class="backup-note" onclick="switchScreen(\'vehicle\')">' + msg + '</button>'
     : '';
 }
-// 지금은 차량이 한 대뿐이지만, 백업 파일은 여러 대를 담을 수 있는 모양으로 내보낸다.
-// 나중에 다중 차량을 넣을 때 예전 백업을 고쳐 읽는 코드를 따로 쓰지 않으려고 미리 붙여둔다.
-function vehicleIdOf(v){
-  if (!v) return null;
-  if (!v.id) v.id = 'v' + Date.now();
-  return v.id;
-}
 function backupPayload(){
-  const vid = vehicleIdOf(vehicle);
-  const 붙이기 = list => list.map(x => ({...x, vehicleId: x.vehicleId || vid}));
   return {
     app:'카스토리', version:3, exportedAt:new Date().toISOString(),
-    vehicles: vehicle ? [vehicle] : [],
-    vehicle,                      // 3판을 모르는 예전 앱도 읽을 수 있게 남겨둔다
-    items: 붙이기(items), fuelLogs: 붙이기(fuelLogs), maintLogs: 붙이기(maintLogs)
+    vehicles, activeId,
+    items: allItems, fuelLogs: allFuel, maintLogs: allLogs
   };
 }
-// 2판(차량 id 없음)과 3판을 모두 같은 모양으로 펴서 돌려준다
+// 2판(차량 한 대, id 없음)과 3판을 모두 같은 모양으로 펴서 돌려준다
 function normalizeBackup(data){
-  const v = (Array.isArray(data.vehicles) && data.vehicles[0]) || data.vehicle || null;
-  const vid = vehicleIdOf(v);
-  const 붙이기 = list => (Array.isArray(list) ? list : []).map(x => ({...x, vehicleId: x.vehicleId || vid}));
-  return { vehicle: v, items: 붙이기(data.items), fuelLogs: 붙이기(data.fuelLogs), maintLogs: 붙이기(data.maintLogs) };
+  const 목록 = Array.isArray(data.vehicles) && data.vehicles.length
+    ? data.vehicles.map(v => ({...v, id: v.id || newVehicleId()}))
+    : (data.vehicle ? [{...data.vehicle, id: data.vehicle.id || newVehicleId()}] : []);
+  const 기본 = 목록[0] ? 목록[0].id : null;
+  const 활성 = 목록.some(v => v.id === data.activeId) ? data.activeId : 기본;
+  const 붙이기 = list => (Array.isArray(list) ? list : []).map(x => ({...x, vehicleId: x.vehicleId || 기본}));
+  return {
+    vehicles: 목록, activeId: 활성,
+    items: 붙이기(data.items), fuelLogs: 붙이기(data.fuelLogs), maintLogs: 붙이기(data.maintLogs)
+  };
 }
 function exportData(){
   const blob = new Blob([JSON.stringify(backupPayload(), null, 2)], {type:'application/json'});
@@ -1468,14 +1464,14 @@ function importData(input){
       return;
     }
     if (!confirm('지금 기기에 있는 기록을 백업 파일 내용으로 덮어쓸까요?')) return;
-    const 편 = normalizeBackup(data);   // 2판 백업엔 차량 id도 교체 이력도 없다
-    vehicles = 편.vehicle ? [편.vehicle] : [];
+    const 편 = normalizeBackup(data);
+    vehicles = 편.vehicles;
     allItems = 편.items;
     allFuel  = 편.fuelLogs;
     allLogs  = 편.maintLogs;
     save(KEYS.vehicles, vehicles);
     save(KEYS.items, allItems); save(KEYS.fuel, allFuel); save(KEYS.logs, allLogs);
-    selectVehicle(편.vehicle ? 편.vehicle.id : null);
+    selectVehicle(편.activeId);
     markBackedUp();   // 방금 불러온 파일이 곧 최신 백업이다
     renderAll();
     alert('불러오기 완료!');
@@ -2431,27 +2427,50 @@ function selfTest(){
     a(BRAND_OIL['푸조'].official.km === 15000 && BRAND_OIL['푸조'].official.month === 12, '푸조·시트로엥 BlueHDi는 15,000km/12개월');
     a(BRAND_OIL['닛산'].official.month === 6, '닛산·인피니티 공식 주기는 6개월');
     a(Object.keys(BRAND_OIL).every(b => BRAND_OIL[b].local.km <= BRAND_OIL[b].official.km), '국내 권장은 공식 주기보다 길 수 없다');
-    // 백업 파일은 나중에 여러 대를 지원할 수 있는 모양으로 내보낸다
-    const 원차백업 = vehicle, 원항목백업 = items, 원주유백업 = fuelLogs, 원이력백업 = maintLogs;
-    vehicle = { id:'v1', brand:'BMW', name:'320d', fuel:'diesel', year:2021, odo:20000 };
-    items = [{ id:'m1', name:'엔진오일' }];
-    fuelLogs = [{ id:'f1', date:'2026-09-01', liters:40, cost:70000, odo:20000, full:true }];
-    maintLogs = [{ id:'L1', name:'엔진오일', date:'2026-09-01', odo:20000, cost:85000 }];
-    const 백업 = backupPayload();
-    a(백업.version === 3, '백업은 3판 형식으로 나간다');
-    a(백업.vehicles.length === 1 && 백업.vehicles[0].id === 'v1', '차량을 목록으로 담는다');
-    a(백업.vehicle && 백업.vehicle.id === 'v1', '예전 판이 읽을 수 있게 vehicle도 남긴다');
-    a(백업.items.every(i => i.vehicleId === 'v1'), '소모품에 차량 id가 붙는다');
-    a(백업.fuelLogs.every(f => f.vehicleId === 'v1'), '주유 기록에 차량 id가 붙는다');
-    a(백업.maintLogs.every(l => l.vehicleId === 'v1'), '교체 이력에 차량 id가 붙는다');
-    // 차량 id가 없던 시절의 백업도 그대로 읽혀야 한다
-    const 옛백업 = { version:2, vehicle:{ brand:'기아', name:'K5', odo:100 },
-                     items:[{ id:'m9', name:'와이퍼' }], fuelLogs:[], maintLogs:[] };
-    const 읽은것 = normalizeBackup(옛백업);
-    a(!!읽은것.vehicle.id, '예전 백업을 읽으면 차량에 id를 만들어 붙인다');
-    a(읽은것.items[0].vehicleId === 읽은것.vehicle.id, '예전 기록에도 그 차량 id를 채운다');
-    a(normalizeBackup(백업).vehicle.id === 'v1', '3판 백업은 담긴 id를 그대로 쓴다');
-    vehicle = 원차백업; items = 원항목백업; fuelLogs = 원주유백업; maintLogs = 원이력백업;
+    // ---- 백업: 여러 대를 담고, 예전 파일도 읽힌다 ----
+    const 원백업 = { vehicles, activeId, allItems, allFuel, allLogs, vehicle, items, fuelLogs, maintLogs };
+    vehicles = [{ id:'vA', brand:'BMW', name:'320d', fuel:'diesel', odo:1000 },
+                { id:'vB', brand:'기아', name:'K5', fuel:'gas', odo:2000 }];
+    allItems = [{ id:'i1', name:'엔진오일', vehicleId:'vA' },
+                { id:'i2', name:'와이퍼',   vehicleId:'vB' }];
+    allFuel = []; allLogs = [];
+    selectVehicle('vA');
+
+    const 짐 = backupPayload();
+    a(짐.version === 3, '백업은 3판 그대로');
+    a(짐.vehicles.length === 2, '두 대를 모두 담는다');
+    a(짐.activeId === 'vA', '어느 차를 보고 있었는지도 담는다');
+    a(짐.items.length === 2, '전 차량 기록을 담는다');
+    a(짐.items.every(x => x.vehicleId), '기록마다 차량 id가 붙어 있다');
+    a(짐.vehicle === undefined, '호환용 vehicle 키는 더 쓰지 않는다');
+
+    const 되읽기 = normalizeBackup(짐);
+    a(되읽기.vehicles.length === 2 && 되읽기.activeId === 'vA', '담은 그대로 되읽힌다');
+
+    // 2판 백업 — 차량 한 대, vehicleId 없음
+    const 이판 = { version:2, vehicle:{ brand:'기아', name:'K5', odo:100 },
+                   items:[{ id:'m9', name:'와이퍼' }], fuelLogs:[], maintLogs:[] };
+    const 편2 = normalizeBackup(이판);
+    a(편2.vehicles.length === 1 && !!편2.vehicles[0].id, '2판을 읽으면 차량에 id를 만들어 붙인다');
+    a(편2.items[0].vehicleId === 편2.vehicles[0].id, '2판 기록에도 차량 id를 채운다');
+    a(편2.activeId === 편2.vehicles[0].id, '2판은 그 한 대가 활성 차량이 된다');
+
+    // 어제 형식(3판이지만 vehicles가 한 대 + vehicle 키가 있던 파일)
+    const 어제 = { version:3, vehicles:[{ id:'vZ', brand:'BMW', name:'i4', odo:5 }],
+                   vehicle:{ id:'vZ', brand:'BMW', name:'i4', odo:5 },
+                   items:[{ id:'m1', name:'와이퍼', vehicleId:'vZ' }], fuelLogs:[], maintLogs:[] };
+    const 편3 = normalizeBackup(어제);
+    a(편3.vehicles.length === 1 && 편3.activeId === 'vZ', '어제 형식도 그대로 읽힌다');
+
+    // 파일로 내보냈다 다시 읽는 것과 같은 길 — JSON 문자열을 거쳐도 두 대와 각자 기록이 그대로여야 한다
+    const 왕복 = normalizeBackup(JSON.parse(JSON.stringify(backupPayload())));
+    a(왕복.vehicles.map(v => v.id).join() === 'vA,vB', '문자열로 왕복해도 두 대가 순서대로 남는다');
+    a(왕복.items.filter(x => x.vehicleId === 'vB').length === 1, '문자열로 왕복해도 차마다 기록이 갈린다');
+
+    vehicles = 원백업.vehicles; activeId = 원백업.activeId;
+    allItems = 원백업.allItems; allFuel = 원백업.allFuel; allLogs = 원백업.allLogs;
+    vehicle = 원백업.vehicle; items = 원백업.items;
+    fuelLogs = 원백업.fuelLogs; maintLogs = 원백업.maintLogs;
     a(new Set(sampleData('gas').items.map(i => i.name)).size === sampleData('gas').items.length, '예시 데이터에 같은 이름이 없어야 함');
     // 유종마다 예시가 그 차에 맞는 항목만 담아야 한다
     ['gas','diesel','hybrid','ev','lpg'].forEach(f => {
