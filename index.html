@@ -583,6 +583,7 @@
           </div>
         </div>
         <button class="btn primary block" onclick="saveVehicle()">저장</button>
+        <button class="btn block" onclick="deleteActiveVehicle()" style="color:var(--danger); margin-top:8px;">이 차 삭제</button>
       </div>
       <div class="card">
         <h3>데이터 백업</h3>
@@ -1272,6 +1273,31 @@ function saveVehicle(){
     saveVehicles();
     selectVehicle(v.id);
   }
+  renderAll();
+  switchScreen('home');
+}
+function deleteVehicleCounts(id){
+  return {
+    items: allItems.filter(x => x.vehicleId === id).length,
+    fuel:  allFuel.filter(x  => x.vehicleId === id).length,
+    logs:  allLogs.filter(x  => x.vehicleId === id).length
+  };
+}
+// 주인 없는 기록을 남기지 않는다. 안 지우면 쓰지도 않는 데이터가 쌓이고 백업만 커진다.
+function deleteActiveVehicle(){
+  if (!vehicle) return;
+  const id = vehicle.id;
+  const c = deleteVehicleCounts(id);
+  const 이름 = vehicleTitle();
+  if (!confirm(이름 + '을(를) 지울까요?\n소모품 ' + c.items + '건 · 주유 ' + c.fuel +
+               '건 · 교체 이력 ' + c.logs + '건이 함께 지워집니다. 되돌릴 수 없어요.')) return;
+  vehicles = vehicles.filter(v => v.id !== id);
+  allItems = allItems.filter(x => x.vehicleId !== id);
+  allFuel  = allFuel.filter(x  => x.vehicleId !== id);
+  allLogs  = allLogs.filter(x  => x.vehicleId !== id);
+  save(KEYS.items, allItems); save(KEYS.fuel, allFuel); save(KEYS.logs, allLogs);
+  saveVehicles();
+  selectVehicle(vehicles[0] ? vehicles[0].id : null);
   renderAll();
   switchScreen('home');
 }
@@ -2622,6 +2648,32 @@ function selfTest(){
     document.querySelector('.tab-btn[data-screen="vehicle"]').click();
     a(document.getElementById('vEditId').value === vehicle.id, '탭바로 차량 탭을 열면 선택된 차를 고치는 폼이 된다');
     switchScreen('home');
+
+    // 차를 지우면 그 차 기록만 사라지고 다른 차 것은 남는다
+    vehicles = [{ id:'vA', brand:'BMW', name:'320d', odo:1000 },
+                { id:'vB', brand:'기아', name:'K5',  odo:2000 }];
+    allItems = [{ id:'i1', name:'엔진오일', vehicleId:'vA' },
+                { id:'i2', name:'와이퍼',   vehicleId:'vA' },
+                { id:'i3', name:'배터리',   vehicleId:'vB' }];
+    allFuel  = [{ id:'f1', date:'2026-09-01', liters:40, cost:70000, odo:1000, full:true, vehicleId:'vA' }];
+    allLogs  = [{ id:'L1', name:'엔진오일', date:'2026-09-01', odo:1000, cost:85000, vehicleId:'vA' }];
+    selectVehicle('vA');
+    const 셈 = deleteVehicleCounts('vA');
+    a(셈.items === 2 && 셈.fuel === 1 && 셈.logs === 1, '지워질 기록 건수를 센다');
+
+    const 원confirm2 = window.confirm;
+    window.confirm = () => true;
+    deleteActiveVehicle();
+    window.confirm = 원confirm2;
+    a(vehicles.length === 1 && vehicles[0].id === 'vB', '지운 차가 목록에서 빠진다');
+    a(allItems.length === 1 && allItems[0].vehicleId === 'vB', '지운 차의 소모품만 사라진다');
+    a(allFuel.length === 0 && allLogs.length === 0, '지운 차의 주유·이력도 사라진다');
+    a(activeId === 'vB', '남은 차로 전환된다');
+
+    window.confirm = () => true;
+    deleteActiveVehicle();
+    window.confirm = 원confirm2;
+    a(vehicles.length === 0 && vehicle === null, '마지막 차를 지우면 빈 상태가 된다');
 
     vehicles = 원다중.vehicles; activeId = 원다중.activeId;
     allItems = 원다중.allItems; allFuel = 원다중.allFuel; allLogs = 원다중.allLogs;
