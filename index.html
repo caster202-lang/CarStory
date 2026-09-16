@@ -539,6 +539,17 @@
           <label>모델명</label>
           <input id="vMakeModel" placeholder="예: 320d">
         </div>
+        <div class="field">
+          <label>유종</label>
+          <select id="vFuel">
+            <option value="">선택 안 함</option>
+            <option value="gas">가솔린</option>
+            <option value="diesel">디젤</option>
+            <option value="hybrid">하이브리드</option>
+            <option value="ev">전기</option>
+            <option value="lpg">LPG</option>
+          </select>
+        </div>
         <div class="field-row">
           <div class="field">
             <label>연식</label>
@@ -559,14 +570,26 @@
           <button class="btn grow" onclick="document.getElementById('importFile').click()">불러오기</button>
         </div>
         <input type="file" id="importFile" accept="application/json,.json" style="display:none" onchange="importData(this)">
-        <button class="btn block" style="margin-top:10px;" onclick="loadSampleData()">샘플 데이터 넣어보기</button>
+        <div class="field-row" style="margin-top:12px">
+          <div class="field" style="margin-bottom:0">
+            <label>예시 데이터 유종</label>
+            <select id="sampleFuel">
+              <option value="gas">가솔린</option>
+              <option value="diesel">디젤</option>
+              <option value="hybrid">하이브리드</option>
+              <option value="ev">전기</option>
+              <option value="lpg">LPG</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn block" style="margin-top:10px;" onclick="loadSampleData()">예시 데이터 넣어보기</button>
+        <button class="btn block" onclick="resetAll()" style="color:var(--danger); margin-top:10px;">전체 데이터 초기화</button>
       </div>
 
       <div class="card">
         <h3>내 차 상태 인쇄</h3>
         <p class="hint">정비소에 보여주거나, 중고차 팔 때 관리 이력을 증명하거나, 기록을 종이·PDF로 남길 때 쓰세요. 인쇄 창에서 <b>대상을 "PDF로 저장"</b>으로 고르면 파일로 받을 수 있습니다.</p>
         <button class="btn primary block" onclick="printStatus()">인쇄 / PDF로 저장</button>
-        <button class="btn block" onclick="resetAll()" style="color:var(--danger); margin-top:12px;">전체 데이터 초기화</button>
       </div>
     </section>
 
@@ -593,30 +616,7 @@
     <input type="hidden" id="maintEditId">
     <div class="field">
       <label>항목</label>
-      <select id="maintPreset" onchange="applyPreset()">
-        <option value="">직접 입력</option>
-        <optgroup label="자주 교체">
-          <option value="엔진오일">엔진오일</option>
-          <option value="오일필터">오일필터</option>
-          <option value="에어필터">에어필터</option>
-          <option value="캐빈(에어컨) 필터">캐빈(에어컨) 필터</option>
-          <option value="와이퍼">와이퍼</option>
-          <option value="배터리">배터리</option>
-          <option value="타이어 위치교환">타이어 위치교환</option>
-        </optgroup>
-        <optgroup label="가끔 교체">
-          <option value="연료필터">연료필터</option>
-          <option value="휠 얼라이먼트">휠 얼라이먼트</option>
-          <option value="타이어">타이어</option>
-          <option value="브레이크 패드">브레이크 패드</option>
-          <option value="브레이크 오일">브레이크 오일</option>
-          <option value="냉각수">냉각수</option>
-          <option value="변속기 오일">변속기 오일</option>
-          <option value="점화플러그">점화플러그</option>
-          <option value="구동벨트">구동벨트</option>
-          <option value="하이텐션코드">하이텐션코드</option>
-        </optgroup>
-      </select>
+      <select id="maintPreset" onchange="applyPreset()"></select>
     </div>
     <div class="field">
       <label>항목명</label>
@@ -751,33 +751,51 @@ let maintLogs = load(KEYS.logs, []);
 // 공통 기준 (기획서 6.1)
 // 순서는 실제로 얼마나 자주 가는지를 따른다. 자주 손대는 것이 위, 몇 년에 한 번인 것이 아래.
 // 이 순서가 프리셋 목록과 "같이 교체한 항목" 목록에 모두 쓰인다.
+// 유종 — 차마다 있는 부품이 다르다. 전기차에 점화플러그를 보여줄 이유가 없다.
+const FUELS = { gas:'가솔린', diesel:'디젤', hybrid:'하이브리드', ev:'전기', lpg:'LPG' };
+const ALL_FUEL = ['gas','diesel','hybrid','ev','lpg'];
+const ENGINE   = ['gas','diesel','hybrid','lpg'];   // 엔진이 있는 차
+const SPARK    = ['gas','hybrid','lpg'];            // 불꽃으로 점화하는 차 (디젤은 압축 점화)
+
 // 기본 주기는 국내 정비 기준표를 따른다. 수입차 매뉴얼보다 짧은데,
 // 국내 주행(시내 정체·짧은 거리 반복)이 대부분 가혹조건에 해당하기 때문이다.
 // 브랜드를 고르면 "제조사 공식 주기"도 함께 보여주니 거기서 바꿀 수 있다.
 const PRESETS = {
-  // 자주 교체 — 엔진오일 갈 때 함께 보거나, 1~2년마다 가는 것들
-  '엔진오일': {km:10000, month:12},
-  '오일필터': {km:10000, month:12},   // 엔진오일과 같은 주기 — 거의 항상 함께 교체
-  '에어필터': {km:10000, month:null},
-  '캐빈(에어컨) 필터': {km:10000, month:12},
-  '와이퍼': {km:null, month:12},
-  '배터리': {km:null, month:36},
-  '타이어 위치교환': {km:10000, month:null},
-  // 가끔 교체 — 수만 km 또는 몇 년에 한 번
-  '연료필터': {km:20000, month:null},
-  '휠 얼라이먼트': {km:20000, month:null},
-  '타이어': {km:45000, month:null},   // 표는 "마모 상태 점검 후 교환" — 눈으로 꼭 확인할 것
-  '브레이크 패드': {km:40000, month:null},
-  '브레이크 오일': {km:40000, month:24},
-  '냉각수': {km:40000, month:24},
-  '변속기 오일': {km:40000, month:null},
-  '점화플러그': {km:40000, month:null},
-  '구동벨트': {km:40000, month:null},
-  '하이텐션코드': {km:40000, month:null},
+  // 자주 교체
+  '엔진오일':          {km:10000,  month:12,   fuel:ENGINE},
+  '오일필터':          {km:10000,  month:12,   fuel:ENGINE},   // 엔진오일과 함께
+  '에어필터':          {km:10000,  month:null, fuel:ENGINE},
+  '캐빈(에어컨) 필터':  {km:10000,  month:12,   fuel:ALL_FUEL},
+  '와이퍼':            {km:null,   month:12,   fuel:ALL_FUEL},
+  '요소수':            {km:10000,  month:null, fuel:['diesel']},
+  '배터리':            {km:null,   month:36,   fuel:ALL_FUEL},
+  '타이어 위치교환':    {km:10000,  month:null, fuel:ALL_FUEL},
+  // 가끔 교체
+  '연료필터':          {km:20000,  month:null, fuel:ENGINE},
+  '휠 얼라이먼트':      {km:20000,  month:null, fuel:ALL_FUEL},
+  '타이어':            {km:45000,  month:null, fuel:ALL_FUEL},  // 마모 상태를 눈으로 꼭 확인
+  '브레이크 패드':      {km:40000,  month:null, fuel:ALL_FUEL},
+  '브레이크 오일':      {km:40000,  month:24,   fuel:ALL_FUEL},
+  '냉각수':            {km:40000,  month:24,   fuel:ALL_FUEL},
+  '변속기 오일':        {km:40000,  month:null, fuel:ENGINE},
+  '감속기 오일':        {km:60000,  month:null, fuel:['ev']},
+  '점화플러그':         {km:40000,  month:null, fuel:SPARK},
+  '하이텐션코드':       {km:40000,  month:null, fuel:SPARK},
+  '구동벨트':          {km:40000,  month:null, fuel:ENGINE},
+  '에어컨 냉매':        {km:null,   month:48,   fuel:ALL_FUEL},
+  '예열플러그':         {km:80000,  month:null, fuel:['diesel']},
+  '브레이크 디스크':     {km:80000,  month:null, fuel:ALL_FUEL},  // 패드 두 번에 한 번꼴
+  '점화코일':          {km:100000, month:null, fuel:SPARK},
+  'DPF 청소':         {km:100000, month:null, fuel:['diesel']},
 };
 const ITEM_ORDER = Object.keys(PRESETS);
-// 자주 손대는 묶음 (목록 맨 앞에 모아둔다)
-const FREQUENT_SET = ['엔진오일', '오일필터', '에어필터', '캐빈(에어컨) 필터', '와이퍼', '배터리', '타이어 위치교환'];
+// 자주 손대는 묶음 (목록 앞쪽)
+const FREQUENT_SET = ['엔진오일','오일필터','에어필터','캐빈(에어컨) 필터','와이퍼','요소수','배터리','타이어 위치교환'];
+
+// 내 차 유종에 해당하는 소모품만 추린다. 유종을 안 고르면 전부 보여준다.
+function presetNamesFor(fuel){
+  return ITEM_ORDER.filter(n => !fuel || PRESETS[n].fuel.indexOf(fuel) !== -1);
+}
 function orderIndex(name){
   const i = ITEM_ORDER.indexOf(name);
   return i === -1 ? 999 : i;   // 직접 지은 이름은 맨 뒤
@@ -955,6 +973,8 @@ const ITEM_ICON = {
   brakepad:    '<circle cx="11" cy="12" r="7.6"/><circle cx="11" cy="12" r="2.2"/><path d="M17.2 7.6a2.2 2.2 0 0 1 2.2 2.2v4.4a2.2 2.2 0 0 1-2.2 2.2"/>',
   // 브레이크 오일 — 오일 저장통
   brakeoil:    '<rect x="4.4" y="8" width="15.2" height="11.6" rx="2"/><path d="M9 8V5.4h6V8"/><path d="M12 11.4c1.4 1.6 2.2 2.6 2.2 3.5a2.2 2.2 0 0 1-4.4 0c0-.9.8-1.9 2.2-3.5z"/>',
+  // 점화플러그·점화코일·예열플러그 — 불꽃
+  spark:       '<path d="M13.4 2.6 6.8 12.8h4.2l-1 8.6 6.8-10.6h-4.2z"/>',
   // 냉각수 — 온도계
   coolant:     '<path d="M13.6 13.6V5.2a1.9 1.9 0 1 0-3.8 0v8.4a3.9 3.9 0 1 0 3.8 0z"/><path d="M11.7 8.8v5.2"/>',
   // 와이퍼 — 계기판 워셔 기호: 닦인 유리(곡선 밴드) + 회전축 + 암 + 반짝임
@@ -967,7 +987,7 @@ const KIND_COLOR = {
   airfilter:'#3fae9a', cabinfilter:'#3fae9a',
   tire:'#5d6b7d', battery:'#54ab5c',
   brakepad:'#e0647a', brakeoil:'#e0647a',
-  coolant:'#3f92d8', wiper:'#8e6fc4', etc:null,
+  coolant:'#3f92d8', wiper:'#8e6fc4', spark:'#c9922e', etc:null,
 };
 // 직접 지은 이름도 알아보게, 이름에 든 낱말로 판단한다.
 // 순서가 중요하다 — "브레이크 오일"은 오일이 아니라 브레이크, "오일필터"는 오일이 아니라 필터로 가야 한다.
@@ -982,7 +1002,8 @@ function itemKind(name){
   if (n.indexOf('오일') !== -1) return 'oil';
   if (n.indexOf('타이어') !== -1) return 'tire';
   if (n.indexOf('배터리') !== -1) return 'battery';
-  if (n.indexOf('냉각') !== -1 || n.indexOf('부동액') !== -1) return 'coolant';
+  if (n.indexOf('점화') !== -1 || n.indexOf('예열') !== -1 || n.indexOf('플러그') !== -1 || n.indexOf('하이텐션') !== -1) return 'spark';
+  if (n.indexOf('냉각') !== -1 || n.indexOf('부동액') !== -1 || n.indexOf('냉매') !== -1) return 'coolant';
   if (n.indexOf('와이퍼') !== -1) return 'wiper';
   return 'etc';
 }
@@ -1086,6 +1107,7 @@ function renderVehicleForm(){
   if (!vehicle){ setBrand(''); return; }
   setBrand(BRANDS_ALL.indexOf(vehicle.brand) !== -1 ? vehicle.brand : '');
   document.getElementById('vMakeModel').value = vehicle.name || '';
+  document.getElementById('vFuel').value = vehicle.fuel || '';
   document.getElementById('vYear').value = vehicle.year || '';
   document.getElementById('vOdo').value = vehicle.odo != null ? vehicle.odo : '';
 }
@@ -1095,40 +1117,58 @@ function saveVehicle(){
   const year = numOf('vYear');
   const odo = numOf('vOdo');
   if (!brand && !name) { alert('브랜드나 모델명 중 하나는 입력해주세요'); return; }
-  vehicle = { brand, name, year, odo: odo != null ? odo : 0 };
+  const fuel = document.getElementById('vFuel').value;
+  vehicle = { brand, name, fuel, year, odo: odo != null ? odo : 0 };
   save(KEYS.vehicle, vehicle);
   renderAll();
   switchScreen('home');
 }
-// 앱이 채워진 모습을 확인하기 위한 예시 데이터.
-// 아이콘 8종(오일·필터·타이어·배터리·브레이크·냉각수·와이퍼·기타)과
-// 상태 4가지(시기 지남·곧 교체·정상·기록 필요)가 모두 한 번씩 나오도록 짜여 있다.
-function sampleData(){
+// 예시 데이터. 유종에 맞는 항목만 골라 넣고, 상태 4가지가 모두 나오도록 값을 잡는다.
+// [항목명, 마지막 교체 주행거리, 몇 달 전] — null 이면 그 기준은 비움
+const SAMPLE_PLAN = [
+  ['캐빈(에어컨) 필터', 30000, 14],    // 시기 지남
+  ['엔진오일',          41000, 7],     // 곧 교체
+  ['오일필터',          41000, 7],
+  ['브레이크 패드',      16000, null],  // 곧 교체 (남은 비율이 적음)
+  ['와이퍼',            null,  11],    // 곧 교체
+  ['요소수',            44000, 1],
+  ['에어필터',          44000, 3],
+  ['타이어',            10000, null],
+  ['배터리',            null,  12],
+  ['브레이크 오일',      30000, 18],
+  ['냉각수',            30000, 20],
+  ['점화플러그',         20000, null],
+  ['감속기 오일',        20000, null],
+  ['휠 얼라이먼트',      null,  null],  // 기록 없음
+];
+
+function sampleData(fuel){
+  fuel = fuel || 'gas';
   const monthsAgo = (m)=>{ const d = new Date(); d.setMonth(d.getMonth() - m); return d.toISOString().slice(0,10); };
   const daysAgo   = (n)=>{ const d = new Date(); d.setDate(d.getDate() - n);   return d.toISOString().slice(0,10); };
   const ODO = 48200;
+  const 가능한항목 = presetNamesFor(fuel);
 
-  const 차량 = { brand:'제네시스', name:'G80', year:2022, odo:ODO };
+  const 차량 = {
+    brand: fuel === 'ev' ? '테슬라' : '제네시스',
+    name:  fuel === 'ev' ? 'Model 3' : 'G80',
+    fuel: fuel,
+    year: 2022,
+    odo: ODO
+  };
 
-  const 소모품 = [
-    // 시기 지남 (빨강)
-    { id:'s01', name:'캐빈(에어컨) 필터', intervalKm:20000, intervalMonth:12,   lastKm:30000, lastDate:monthsAgo(14) },
-    // 곧 교체 (주황)
-    { id:'s02', name:'브레이크 패드',     intervalKm:35000, intervalMonth:null, lastKm:16000, lastDate:null },
-    { id:'s03', name:'엔진오일',         intervalKm:8000,  intervalMonth:12,   lastKm:41000, lastDate:monthsAgo(7) },
-    { id:'s04', name:'와이퍼',           intervalKm:null,  intervalMonth:12,   lastKm:null,  lastDate:monthsAgo(11) },
-    // 정상
-    { id:'s05', name:'오일필터',         intervalKm:8000,  intervalMonth:12,   lastKm:45000, lastDate:monthsAgo(2) },
-    { id:'s06', name:'에어필터',         intervalKm:30000, intervalMonth:null, lastKm:28000, lastDate:monthsAgo(10) },
-    { id:'s07', name:'타이어',           intervalKm:45000, intervalMonth:null, lastKm:10000, lastDate:null },
-    { id:'s08', name:'배터리',           intervalKm:null,  intervalMonth:48,   lastKm:null,  lastDate:monthsAgo(39) },
-    { id:'s09', name:'브레이크 오일',     intervalKm:null,  intervalMonth:24,   lastKm:null,  lastDate:monthsAgo(18) },
-    { id:'s10', name:'냉각수',           intervalKm:null,  intervalMonth:24,   lastKm:null,  lastDate:monthsAgo(20) },
-    // 기록 필요 (교체 시점을 아직 안 넣은 상태 — 목록에 어떻게 보이는지 확인용)
-    { id:'s11', name:'점화플러그',       intervalKm:40000, intervalMonth:null, lastKm:null,  lastDate:null },
-  ];
+  const 소모품 = SAMPLE_PLAN
+    .filter(([name]) => 가능한항목.indexOf(name) !== -1)
+    .map(([name, lastKm, months], i) => ({
+      id: 's' + (i + 1),
+      name: name,
+      intervalKm: PRESETS[name].km,
+      intervalMonth: PRESETS[name].month,
+      lastKm: lastKm,
+      lastDate: months == null ? null : monthsAgo(months),
+    }));
 
-  const 주유 = [
+  const 주유 = fuel === 'ev' ? [] : [
     { id:'sf1', date:daysAgo(120), liters:55, cost:95000, odo:43200, full:true },
     { id:'sf2', date:daysAgo(95),  liters:52, cost:91000, odo:44100, full:true },
     { id:'sf3', date:daysAgo(70),  liters:51, cost:89000, odo:45000, full:true },
@@ -1144,7 +1184,8 @@ function sampleData(){
 
 function loadSampleData(){
   if (!confirm('지금 저장된 기록을 지우고 예시 데이터를 넣을까요?\n실제로 쓰실 때는 "전체 데이터 초기화"로 지우고 시작하세요.')) return;
-  const s = sampleData();
+  const sel = document.getElementById('sampleFuel');
+  const s = sampleData(sel ? sel.value : 'gas');
   vehicle = s.vehicle; items = s.items; fuelLogs = s.fuelLogs;
   save(KEYS.vehicle, vehicle); save(KEYS.items, items); save(KEYS.fuel, fuelLogs);
   renderAll();
@@ -1160,6 +1201,7 @@ function resetAll(){
   vehicle = null; items = []; fuelLogs = []; maintLogs = [];
   setBrand('');
   document.getElementById('vMakeModel').value = '';
+  document.getElementById('vFuel').value = '';
   document.getElementById('vYear').value = '';
   document.getElementById('vOdo').value = '';
   renderAll();
@@ -1205,7 +1247,6 @@ function importData(input){
 function openMaintModal(editId){
   document.getElementById('maintEditId').value = editId || '';
   document.getElementById('maintModalTitle').textContent = editId ? '소모품 수정' : '소모품 추가';
-  document.getElementById('maintPreset').value = '';
   if (editId){
     const it = items.find(i=>i.id===editId);
     document.getElementById('maintName').value = it.name;
@@ -1217,6 +1258,8 @@ function openMaintModal(editId){
   } else {
     ['maintName','maintIntervalKm','maintIntervalMonth','maintLastKm','maintLastDate','maintCost'].forEach(id=>document.getElementById(id).value='');
   }
+  renderPresetOptions();
+  document.getElementById('maintPreset').value = '';
   document.getElementById('maintDeleteBtn').style.display = editId ? 'inline-flex' : 'none';
   limitDateInput(document.getElementById('maintLastDate'));
   renderAlsoList();
@@ -1256,7 +1299,9 @@ function renderBrandGuide(){
   if (!brand || !isOilItem){ el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = 'block';
 
-  if (EV_BRANDS.indexOf(brand) !== -1){
+  // 브랜드만으로는 BMW i4, 아이오닉5 같은 차를 못 걸러서 유종도 같이 본다
+  const isEV = (vehicle && vehicle.fuel === 'ev') || EV_BRANDS.indexOf(brand) !== -1;
+  if (isEV){
     el.innerHTML =
       '<div class="guide-title">' + esc(brand) + '는 전기차예요</div>' +
       '<div class="guide-note">전기차는 엔진오일을 갈 필요가 없어요. 대신 <b>브레이크 오일·냉각수·캐빈 필터·타이어</b>를 등록해서 관리하시면 됩니다.</div>';
@@ -1308,6 +1353,16 @@ function alsoCandidates(editId, name){
     .filter(i => i.id !== editId && i.name !== name)
     .sort((a,b) => orderIndex(a.name) - orderIndex(b.name));
 }
+// 유종이 정해져 있으면 그에 맞는 항목만 고를 수 있게 한다
+function renderPresetOptions(){
+  const sel = document.getElementById('maintPreset');
+  const keep = sel.value;
+  const names = presetNamesFor(vehicle && vehicle.fuel);
+  sel.innerHTML = '<option value="">직접 입력</option>' +
+    names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('');
+  sel.value = names.indexOf(keep) !== -1 ? keep : '';
+}
+
 function renderAlsoList(){
   const wrap = document.getElementById('alsoWrap');
   const list = document.getElementById('alsoList');
@@ -1902,13 +1957,27 @@ function selfTest(){
     ['연료필터','변속기 오일','점화플러그','구동벨트','하이텐션코드','타이어 위치교환','휠 얼라이먼트']
       .forEach(n => a(PRESETS[n], n + ' 프리셋이 있어야 함'));
     a(itemKind('연료필터') === 'oilfilter', '연료필터는 깡통 아이콘');
+    a(itemKind('점화플러그') === 'spark' && itemKind('점화코일') === 'spark' && itemKind('예열플러그') === 'spark', '점화 계열은 불꽃 아이콘');
+    a(itemKind('에어컨 냉매') === 'coolant', '냉매는 온도계 아이콘');
+    a(itemKind('브레이크 디스크') === 'brakepad', '브레이크 디스크는 브레이크 아이콘');
+    // 유종별로 걸러지는지
+    a(Object.keys(PRESETS).every(n => Array.isArray(PRESETS[n].fuel)), '모든 프리셋에 유종이 지정돼야 함');
+    const 전기 = presetNamesFor('ev');
+    a(전기.indexOf('엔진오일') === -1 && 전기.indexOf('점화플러그') === -1, '전기차엔 엔진오일·점화플러그가 안 보임');
+    a(전기.indexOf('감속기 오일') !== -1 && 전기.indexOf('타이어') !== -1, '전기차에도 감속기 오일과 타이어는 보임');
+    const 가솔린 = presetNamesFor('gas');
+    a(가솔린.indexOf('점화플러그') !== -1 && 가솔린.indexOf('예열플러그') === -1, '가솔린엔 점화플러그만');
+    const 디젤 = presetNamesFor('diesel');
+    a(디젤.indexOf('예열플러그') !== -1 && 디젤.indexOf('점화플러그') === -1, '디젤엔 예열플러그만');
+    a(디젤.indexOf('요소수') !== -1 && 가솔린.indexOf('요소수') === -1, '요소수는 디젤만');
+    a(presetNamesFor('').length === Object.keys(PRESETS).length, '유종을 안 고르면 전부 보임');
     // 참고값 문구는 본문과 줄을 나눠서 보여준다
     a(noteHtml('본문입니다. ※ 참고값입니다.').indexOf('guide-caveat') !== -1, '참고값은 줄을 나눠 표시');
     a(noteHtml('본문만 있습니다.').indexOf('guide-caveat') === -1, '참고값이 없으면 줄을 나누지 않음');
     // 자주 쓰는 것들이 앞에 모여 있어야 한다
     a(orderIndex('엔진오일') === 0, '엔진오일이 맨 앞');
     a(orderIndex('오일필터') === 1 && orderIndex('에어필터') === 2 && orderIndex('캐빈(에어컨) 필터') === 3, '오일·필터류가 뒤따름');
-    a(orderIndex('와이퍼') === 4 && orderIndex('배터리') === 5, '와이퍼와 배터리가 그 다음');
+    a(orderIndex('와이퍼') < orderIndex('배터리'), '와이퍼가 배터리보다 앞');
     a(orderIndex('타이어') > orderIndex('배터리'), '타이어는 자주 갈지 않으므로 아래');
     a(orderIndex('냉각수') > orderIndex('타이어'), '냉각수는 더 아래');
     a(orderIndex('내가 지은 이름') === 999, '직접 지은 이름은 맨 뒤');
@@ -1933,10 +2002,19 @@ function selfTest(){
     a(alsoCandidates('a', '엔진오일').length === 1, '수정 중인 항목 자신도 빠져야 함');
     a(alsoCandidates('', '와이퍼').length === 2, '겹치지 않으면 모두 후보');
     items = 원래items;
-    a(new Set(sampleData().items.map(i => i.name)).size === sampleData().items.length, '예시 데이터에 같은 이름이 없어야 함');
+    a(new Set(sampleData('gas').items.map(i => i.name)).size === sampleData('gas').items.length, '예시 데이터에 같은 이름이 없어야 함');
+    // 유종마다 예시가 그 차에 맞는 항목만 담아야 한다
+    ['gas','diesel','hybrid','ev','lpg'].forEach(f => {
+      const 가능 = presetNamesFor(f);
+      a(sampleData(f).items.every(it => 가능.indexOf(it.name) !== -1), f + ' 예시에 맞지 않는 항목이 없어야 함');
+      a(sampleData(f).items.length >= 6, f + ' 예시에 항목이 충분해야 함');
+    });
+    a(sampleData('ev').items.every(it => it.name !== '엔진오일'), '전기차 예시엔 엔진오일이 없어야 함');
+    a(sampleData('ev').fuelLogs.length === 0, '전기차 예시엔 주유 기록이 없어야 함');
+    a(sampleData('diesel').items.some(it => it.name === '요소수'), '디젤 예시엔 요소수가 있어야 함');
     // 인쇄물 — 예시 데이터로 세 구역이 모두 채워지는지
     const 원차 = vehicle, 원항목 = items, 원주유 = fuelLogs;
-    const sp = sampleData();
+    const sp = sampleData('gas');
     vehicle = sp.vehicle; items = sp.items; fuelLogs = sp.fuelLogs;
     const 급한것 = urgentItems();
     const 종이 = buildPrintSheet();
@@ -1973,7 +2051,7 @@ function selfTest(){
     a(itemColor('내가 지은 이름') === itemColor('내가 지은 이름'), '같은 이름은 항상 같은 색');
     a(itemColorSoft('엔진오일').length === 9, '지정 색은 투명도가 붙은 8자리 hex');
     // 예시 데이터가 아이콘 8종과 상태 4가지를 모두 보여주는지 (확인용 데이터가 빈약해지지 않게)
-    const 예시 = sampleData();
+    const 예시 = sampleData('gas');
     const 원래차량 = vehicle;
     vehicle = 예시.vehicle;
     const 종류들 = new Set(예시.items.map(it => itemKind(it.name)));
