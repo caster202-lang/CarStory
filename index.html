@@ -199,6 +199,7 @@
   .row-meta.warn { color: var(--warn); }
   .row-meta.danger { color: var(--danger); }
   .row-sub { font-size:12px; color: var(--ink-dim); margin-top:3px; }
+  .row-note { font-size:11.5px; color: var(--ink-faint); margin-top:6px; }
 
   .gauge {
     height:7px; border-radius:4px;
@@ -652,6 +653,11 @@
       <input id="maintCost" type="number" placeholder="85000">
       <p class="hint" style="margin:7px 0 0">함께 교체한 항목까지 합친 금액을 적으세요. 비워두셔도 됩니다.</p>
     </div>
+    <div class="field">
+      <label>메모</label>
+      <input id="maintNote" placeholder="예: 모빌1 0W-40 · 강남 OO모터스">
+      <p class="hint" style="margin:7px 0 0">어떤 제품을 썼는지 적어두면 나중에 찾기 쉽고, 중고차 팔 때 증빙이 됩니다.</p>
+    </div>
     <div class="field" id="alsoWrap" style="display:none">
       <label>같이 교체한 항목</label>
       <div class="also-list" id="alsoList"></div>
@@ -787,7 +793,25 @@ const PRESETS = {
   '브레이크 디스크':     {km:80000,  month:null, fuel:ALL_FUEL},  // 패드 두 번에 한 번꼴
   '점화코일':          {km:100000, month:null, fuel:SPARK},
   'DPF 청소':         {km:100000, month:null, fuel:['diesel']},
+
+  // 튜닝 — 교체 주기라는 게 없다. 언제 무엇을 달았는지만 남긴다.
+  // 다만 튜닝이 소모품 주기를 바꾸는 경우가 있어서 tip 으로 알려준다.
+  '오픈흡기 필터':      {km:5000, month:null, fuel:ENGINE, tuning:true,
+    tip:'순정 에어필터를 대신합니다. 교체가 아니라 5,000km마다 세척해서 다시 쓰는 방식이에요. 노출형이라 먼지를 더 먹으니 순정보다 자주 봐주세요.'},
+  'ECU 맵핑':          {km:null, month:null, fuel:ENGINE, tuning:true,
+    tip:'엔진 부하가 올라갑니다. 엔진오일을 평소보다 20~30% 더 자주 가는 걸 권합니다.'},
+  '브레이크 킷':        {km:null, month:null, fuel:ALL_FUEL, tuning:true,
+    tip:'고성능 패드는 제동력이 좋은 대신 마모가 빠릅니다. 브레이크 패드 주기를 짧게 잡으세요.'},
+  '서스펜션':          {km:null, month:null, fuel:ALL_FUEL, tuning:true,
+    tip:'차고가 낮아지면 얼라이먼트가 자주 틀어지고 타이어가 한쪽만 닳을 수 있어요.'},
+  '휠·타이어 교체':     {km:null, month:null, fuel:ALL_FUEL, tuning:true,
+    tip:'고성능 타이어는 접지력이 좋은 대신 순정보다 수명이 짧습니다.'},
+  '다운파이프':         {km:null, month:null, fuel:ENGINE, tuning:true,
+    tip:'촉매 이후 배기를 바꾸는 부품입니다. 차에 따라 산소센서 경고가 뜰 수 있어요.'},
+  '머플러':            {km:null, month:null, fuel:ENGINE, tuning:true},
+  '인터쿨러':          {km:null, month:null, fuel:ENGINE, tuning:true},
 };
+function isTuning(name){ return !!(PRESETS[name] && PRESETS[name].tuning); }
 const ITEM_ORDER = Object.keys(PRESETS);
 // 자주 손대는 묶음 (목록 앞쪽)
 const FREQUENT_SET = ['엔진오일','오일필터','에어필터','캐빈(에어컨) 필터','와이퍼','요소수','배터리','타이어 위치교환'];
@@ -979,6 +1003,8 @@ const ITEM_ICON = {
   coolant:     '<path d="M13.6 13.6V5.2a1.9 1.9 0 1 0-3.8 0v8.4a3.9 3.9 0 1 0 3.8 0z"/><path d="M11.7 8.8v5.2"/>',
   // 와이퍼 — 계기판 워셔 기호: 닦인 유리(곡선 밴드) + 회전축 + 암 + 반짝임
   wiper:       '<path d="M3 11Q12 5.6 21 11L17.8 18.6Q12 14.6 6.2 18.6Z"/><path d="M11.9 18.9 16.6 12.2"/><circle cx="11.6" cy="19.5" r="1.4"/><path d="M6.6 4.6c.5 1.8 1.2 2.5 3 3-1.8.5-2.5 1.2-3 3-.5-1.8-1.2-2.5-3-3 1.8-.5 2.5-1.2 3-3z"/>',
+  // 튜닝 — 성능 게이지
+  tuning:      '<path d="M4.2 17.6a8.8 8.8 0 1 1 15.6 0"/><path d="M12 13.4 16.2 8.6"/><circle cx="12" cy="17.6" r="1.3"/>',
   // 그 밖의 항목 — 렌치
   etc:         '<path d="M15.2 3.4a5 5 0 0 0-6 6L3.7 15a1.9 1.9 0 0 0 0 2.7l2.1 2.1a1.9 1.9 0 0 0 2.7 0l5.5-5.5a5 5 0 0 0 6-6l-2.9 2.9-2.7-.7-.7-2.7z"/>',
 };
@@ -987,12 +1013,13 @@ const KIND_COLOR = {
   airfilter:'#3fae9a', cabinfilter:'#3fae9a',
   tire:'#5d6b7d', battery:'#54ab5c',
   brakepad:'#e0647a', brakeoil:'#e0647a',
-  coolant:'#3f92d8', wiper:'#8e6fc4', spark:'#c9922e', etc:null,
+  coolant:'#3f92d8', wiper:'#8e6fc4', spark:'#c9922e', tuning:'#a8527a', etc:null,
 };
 // 직접 지은 이름도 알아보게, 이름에 든 낱말로 판단한다.
 // 순서가 중요하다 — "브레이크 오일"은 오일이 아니라 브레이크, "오일필터"는 오일이 아니라 필터로 가야 한다.
 function itemKind(name){
   const n = String(name);
+  if (isTuning(n)) return 'tuning';   // 튜닝은 부품 종류보다 "튜닝"인 게 먼저다
   if (n.indexOf('브레이크') !== -1) return n.indexOf('오일') !== -1 ? 'brakeoil' : 'brakepad';
   if (n.indexOf('필터') !== -1){
     if (n.indexOf('오일') !== -1 || n.indexOf('연료') !== -1) return 'oilfilter';  // 둘 다 깡통 모양
@@ -1124,22 +1151,23 @@ function saveVehicle(){
   switchScreen('home');
 }
 // 예시 데이터. 유종에 맞는 항목만 골라 넣고, 상태 4가지가 모두 나오도록 값을 잡는다.
-// [항목명, 마지막 교체 주행거리, 몇 달 전] — null 이면 그 기준은 비움
+// [항목명, 마지막 교체 주행거리, 몇 달 전, 메모] — null 이면 그 칸은 비움
 const SAMPLE_PLAN = [
-  ['캐빈(에어컨) 필터', 30000, 14],    // 시기 지남
-  ['엔진오일',          41000, 7],     // 곧 교체
-  ['오일필터',          41000, 7],
-  ['브레이크 패드',      16000, null],  // 곧 교체 (남은 비율이 적음)
-  ['와이퍼',            null,  11],    // 곧 교체
-  ['요소수',            44000, 1],
-  ['에어필터',          44000, 3],
-  ['타이어',            10000, null],
-  ['배터리',            null,  12],
-  ['브레이크 오일',      30000, 18],
-  ['냉각수',            30000, 20],
-  ['점화플러그',         20000, null],
-  ['감속기 오일',        20000, null],
-  ['휠 얼라이먼트',      null,  null],  // 기록 없음
+  ['캐빈(에어컨) 필터', 30000, 14,   '순정품'],              // 시기 지남
+  ['엔진오일',          41000, 7,    '모빌1 0W-40'],         // 곧 교체
+  ['오일필터',          41000, 7,    '순정품'],
+  ['브레이크 패드',      16000, null, '브렘보 세라믹'],        // 곧 교체
+  ['와이퍼',            null,  11,   '보쉬 에어로트윈'],      // 곧 교체
+  ['요소수',            44000, 1,    null],
+  ['에어필터',          44000, 3,    '말레'],
+  ['오픈흡기 필터',      45000, 2,    'K&N 습식 · 세척 후 재사용'],
+  ['타이어',            10000, null, '미쉐린 PS4'],
+  ['배터리',            null,  12,   '델코 AGM'],
+  ['브레이크 오일',      30000, 18,   'DOT4'],
+  ['냉각수',            30000, 20,   null],
+  ['점화플러그',         20000, null, 'NGK 이리듐'],
+  ['감속기 오일',        20000, null, null],
+  ['휠 얼라이먼트',      null,  null, null],                  // 기록 없음
 ];
 
 function sampleData(fuel){
@@ -1159,13 +1187,14 @@ function sampleData(fuel){
 
   const 소모품 = SAMPLE_PLAN
     .filter(([name]) => 가능한항목.indexOf(name) !== -1)
-    .map(([name, lastKm, months], i) => ({
+    .map(([name, lastKm, months, note], i) => ({
       id: 's' + (i + 1),
       name: name,
       intervalKm: PRESETS[name].km,
       intervalMonth: PRESETS[name].month,
       lastKm: lastKm,
       lastDate: months == null ? null : monthsAgo(months),
+      note: note,
     }));
 
   const 주유 = fuel === 'ev' ? [] : [
@@ -1255,8 +1284,9 @@ function openMaintModal(editId){
     document.getElementById('maintLastKm').value = it.lastKm != null ? it.lastKm : '';
     document.getElementById('maintLastDate').value = it.lastDate || '';
     document.getElementById('maintCost').value = it.lastCost != null ? it.lastCost : '';
+    document.getElementById('maintNote').value = it.note || '';
   } else {
-    ['maintName','maintIntervalKm','maintIntervalMonth','maintLastKm','maintLastDate','maintCost'].forEach(id=>document.getElementById(id).value='');
+    ['maintName','maintIntervalKm','maintIntervalMonth','maintLastKm','maintLastDate','maintCost','maintNote'].forEach(id=>document.getElementById(id).value='');
   }
   renderPresetOptions();
   document.getElementById('maintPreset').value = '';
@@ -1294,6 +1324,14 @@ function renderBrandGuide(){
   const el = document.getElementById('brandGuide');
   const brand = vehicle && vehicle.brand;
   const name = document.getElementById('maintName').value.trim();
+  // 튜닝 항목은 소모품 주기에 영향을 주는 경우가 있어서 먼저 알려준다
+  const tip = PRESETS[name] && PRESETS[name].tip;
+  if (tip){
+    el.style.display = 'block';
+    el.innerHTML = '<div class="guide-title">' + esc(name) + ' — 알아두실 점</div>' +
+      '<div class="guide-note">' + esc(tip) + '</div>';
+    return;
+  }
   // 오일필터는 엔진오일과 주기가 같으므로 같은 안내를 보여준다
   const isOilItem = (name === '엔진오일' || name === '오일필터');
   if (!brand || !isOilItem){ el.style.display = 'none'; el.innerHTML = ''; return; }
@@ -1358,8 +1396,12 @@ function renderPresetOptions(){
   const sel = document.getElementById('maintPreset');
   const keep = sel.value;
   const names = presetNamesFor(vehicle && vehicle.fuel);
+  const opt = n => '<option value="' + esc(n) + '">' + esc(n) + '</option>';
+  const 정비 = names.filter(n => !isTuning(n));
+  const 튜닝 = names.filter(isTuning);
   sel.innerHTML = '<option value="">직접 입력</option>' +
-    names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('');
+    '<optgroup label="소모품">' + 정비.map(opt).join('') + '</optgroup>' +
+    '<optgroup label="튜닝">' + 튜닝.map(opt).join('') + '</optgroup>';
   sel.value = names.indexOf(keep) !== -1 ? keep : '';
 }
 
@@ -1397,6 +1439,7 @@ function saveMaintItem(){
     lastKm: numOf('maintLastKm'),
     lastDate: fixDateValue(document.getElementById('maintLastDate').value, todayStr()) || null,
     lastCost: numOf('maintCost'),
+    note: document.getElementById('maintNote').value.trim() || null,
   };
   const editId = document.getElementById('maintEditId').value;
   // 이미 있는 이름으로 또 만들면 같은 항목이 두 개가 된다.
@@ -1521,6 +1564,7 @@ function maintRow(it, clickable){
     '<span class="row-meta' + tone + '">' + (s.pct != null ? maintLine(it) : '기록 필요') + '</span></div>' +
     bar +
     '</div></div>' +
+    (it.note ? '<div class="row-note">' + esc(it.note) + '</div>' : '') +
     (clickable ? '</button>' : '</div>');
 }
 
@@ -1894,7 +1938,9 @@ function buildPrintSheet(){
       [...items].sort((a,b) => {
         const ra = maintStatusOf(a).rank, rb = maintStatusOf(b).rank;
         return (ra == null ? Infinity : ra) - (rb == null ? Infinity : rb);
-      }).map(it => '<tr><td>' + esc(it.name) + '</td><td>' + cycleText(it) + '</td><td>' +
+      }).map(it => '<tr><td>' + esc(it.name) +
+        (it.note ? '<br><span style="font-size:8.5pt;color:#555">' + esc(it.note) + '</span>' : '') +
+        '</td><td>' + cycleText(it) + '</td><td>' +
         lastText(it) + '</td><td class="num">' + (it.lastCost ? it.lastCost.toLocaleString() + '원' : '-') +
         '</td><td>' + STATUS_LABEL[maintStatusOf(it).cls] + '</td></tr>').join('') +
       '</tbody></table>'
@@ -1994,6 +2040,14 @@ function selfTest(){
     a(itemKind('연료필터') === 'oilfilter', '연료필터는 깡통 아이콘');
     a(itemKind('점화플러그') === 'spark' && itemKind('점화코일') === 'spark' && itemKind('예열플러그') === 'spark', '점화 계열은 불꽃 아이콘');
     a(itemKind('에어컨 냉매') === 'coolant', '냉매는 온도계 아이콘');
+    // 튜닝
+    a(isTuning('오픈흡기 필터') && isTuning('ECU 맵핑'), '튜닝 항목 판별');
+    a(!isTuning('엔진오일'), '소모품은 튜닝이 아님');
+    a(itemKind('오픈흡기 필터') === 'tuning', '튜닝은 필터라도 튜닝 아이콘');
+    a(PRESETS['오픈흡기 필터'].km === 5000, '오픈흡기 필터는 5,000km마다 세척');
+    a(PRESETS['ECU 맵핑'].km === null && PRESETS['ECU 맵핑'].month === null, '대부분의 튜닝은 주기가 없다');
+    a(!!PRESETS['ECU 맵핑'].tip && !!PRESETS['브레이크 킷'].tip, '주기에 영향을 주는 튜닝엔 안내가 있어야 함');
+    a(Object.keys(PRESETS).filter(isTuning).every(n => orderIndex(n) >= Object.keys(PRESETS).filter(x => !isTuning(x)).length), '튜닝은 목록 맨 뒤');
     a(itemKind('브레이크 디스크') === 'brakepad', '브레이크 디스크는 브레이크 아이콘');
     // 유종별로 걸러지는지
     a(Object.keys(PRESETS).every(n => Array.isArray(PRESETS[n].fuel)), '모든 프리셋에 유종이 지정돼야 함');
@@ -2101,7 +2155,9 @@ function selfTest(){
     const 종류들 = new Set(예시.items.map(it => itemKind(it.name)));
     const 상태들 = new Set(예시.items.map(it => maintStatusOf(it).cls));
     vehicle = 원래차량;
-    a(종류들.size === Object.keys(ITEM_ICON).length, '예시 데이터에 아이콘 8종이 모두 나와야 함');
+    a(종류들.size === Object.keys(ITEM_ICON).length, '예시 데이터에 아이콘 ' + Object.keys(ITEM_ICON).length + '종이 모두 나와야 함');
+    a(예시.items.some(it => it.note), '예시 데이터에 메모가 들어 있어야 함');
+    a(예시.items.some(it => isTuning(it.name)), '예시 데이터에 튜닝 항목이 들어 있어야 함');
     a(상태들.has('danger') && 상태들.has('warn') && 상태들.has('ok') && 상태들.has('muted'), '예시 데이터에 상태 4가지가 모두 나와야 함');
     a(['dark','light'].indexOf(currentTheme()) !== -1, '화면 모드는 dark/light 중 하나');
     a(Object.values(KEYS).indexOf(THEME_KEY) === -1, '전체 초기화를 해도 화면 모드 설정은 남아야 함');
