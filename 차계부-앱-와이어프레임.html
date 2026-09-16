@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>차계부 앱 와이어프레임</title>
+<style>
+  :root{
+    --line:#333;
+    --bg:#fff;
+    --muted:#888;
+    --box:#f2f2f2;
+    --accent:#e8e8e8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0;
+    padding:32px 16px;
+    background:#fafafa;
+    font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    color:#1a1a1a;
+  }
+  h1 {
+    text-align:center;
+    font-size:20px;
+    font-weight:700;
+    margin:0 0 4px;
+  }
+  .sub {
+    text-align:center;
+    color:var(--muted);
+    font-size:13px;
+    margin:0 0 28px;
+  }
+  .row {
+    display:flex;
+    flex-wrap:wrap;
+    gap:20px;
+    justify-content:center;
+  }
+  .frame {
+    width:220px;
+  }
+  .frame-label {
+    font-size:13px;
+    font-weight:700;
+    text-align:center;
+    margin-bottom:8px;
+  }
+  .phone {
+    width:220px;
+    height:440px;
+    border:2px solid var(--line);
+    border-radius:18px;
+    background:var(--bg);
+    padding:10px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    position:relative;
+  }
+  .notch {
+    width:50px;
+    height:5px;
+    background:var(--line);
+    border-radius:3px;
+    margin:0 auto 6px;
+    opacity:.4;
+  }
+  .box {
+    border:1.5px dashed var(--line);
+    background:var(--box);
+    border-radius:6px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:11px;
+    color:#444;
+    text-align:center;
+    padding:4px;
+  }
+  .header-box {
+    height:28px;
+    background:var(--accent);
+    border-style:solid;
+    font-weight:700;
+    font-size:12px;
+  }
+  .tag {
+    position:absolute;
+    top:-9px;
+    left:8px;
+    background:#1a1a1a;
+    color:#fff;
+    font-size:9px;
+    padding:2px 6px;
+    border-radius:4px;
+  }
+  .stack { display:flex; flex-direction:column; gap:6px; flex:1; }
+  .hstack { display:flex; gap:6px; }
+  .grow { flex:1; }
+  .small { font-size:10px; }
+  .footer-tabs {
+    height:34px;
+    display:flex;
+    border-top:1.5px solid var(--line);
+    margin-top:4px;
+  }
+  .tab {
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:9px;
+    color:#555;
+    border-right:1px solid #ddd;
+  }
+  .tab:last-child{ border-right:none; }
+  .tab.active { font-weight:700; color:#000; background:var(--accent); }
+  .notes {
+    max-width:220px;
+    font-size:11px;
+    color:#555;
+    line-height:1.5;
+    margin-top:10px;
+  }
+  .notes ul { margin:4px 0 0; padding-left:16px; }
+</style>
+</head>
+<body>
+
+<h1>차계부 앱 — 저충실도 와이어프레임</h1>
+<p class="sub">색/스타일보다 정보 구조와 배치에 집중한 초안입니다</p>
+
+<div class="row">
+
+  <!-- 홈 화면 -->
+  <div class="frame">
+    <div class="frame-label">① 홈 화면</div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="box header-box">내 차 이름 ▾</div>
+      <div class="box" style="height:60px;">
+        <div class="stack">
+          <div class="small">🔔 다가오는 교체 알림</div>
+          <div class="small" style="color:#c0392b;">엔진오일 D-320km</div>
+        </div>
+      </div>
+      <div class="box" style="height:70px;">
+        <div class="stack">
+          <div class="small">⛽ 최근 주유 기록</div>
+          <div class="small">9/14 · 45L · 68,000원</div>
+          <div class="small">연비 11.2km/L</div>
+        </div>
+      </div>
+      <div class="box grow">
+        <div class="small">현재 누적 주행거리<br>32,480 km</div>
+      </div>
+      <div class="footer-tabs">
+        <div class="tab active">홈</div>
+        <div class="tab">소모품</div>
+        <div class="tab">주유</div>
+        <div class="tab">통계</div>
+      </div>
+    </div>
+    <div class="notes">
+      가장 급한 알림 + 최근 기록을 한눈에. 별도 조회 없이 상태 파악.
+    </div>
+  </div>
+
+  <!-- 소모품 관리 -->
+  <div class="frame">
+    <div class="frame-label">② 소모품 관리</div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="box header-box">소모품 관리</div>
+      <div class="box" style="height:50px;">
+        <div class="stack">
+          <div class="hstack"><span class="small grow">엔진오일</span><span class="small" style="color:#c0392b;">D-320km</span></div>
+          <div class="small" style="color:#999;">최근 교체 8,200km 전</div>
+        </div>
+      </div>
+      <div class="box" style="height:50px;">
+        <div class="stack">
+          <div class="hstack"><span class="small grow">타이어</span><span class="small">D-8,000km</span></div>
+          <div class="small" style="color:#999;">최근 교체 12,000km 전</div>
+        </div>
+      </div>
+      <div class="box" style="height:50px;">
+        <div class="stack">
+          <div class="hstack"><span class="small grow">배터리</span><span class="small">양호</span></div>
+          <div class="small" style="color:#999;">교체 2년 3개월 경과</div>
+        </div>
+      </div>
+      <div class="box grow" style="border-style:solid;">
+        <div class="small">＋ 소모품 교체 기록 추가</div>
+      </div>
+      <div class="footer-tabs">
+        <div class="tab">홈</div>
+        <div class="tab active">소모품</div>
+        <div class="tab">주유</div>
+        <div class="tab">통계</div>
+      </div>
+    </div>
+    <div class="notes">
+      임박한 순서로 정렬. 항목 탭하면 상세 이력 &amp; 브랜드별 권장주기 표시.
+    </div>
+  </div>
+
+  <!-- 주유 기록 -->
+  <div class="frame">
+    <div class="frame-label">③ 주유 기록</div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="box header-box">주유 기록</div>
+      <div class="box" style="height:90px; border-style:solid;">
+        <div class="stack">
+          <div class="small" style="font-weight:700;">＋ 새 주유 입력</div>
+          <div class="hstack">
+            <div class="box small grow" style="height:26px;">주유량(L)</div>
+            <div class="box small grow" style="height:26px;">금액</div>
+          </div>
+          <div class="box small" style="height:26px;">현재 주행거리</div>
+        </div>
+      </div>
+      <div class="box" style="height:34px;">
+        <span class="small">9/14 · 45L · 68,000원 · 11.2km/L</span>
+      </div>
+      <div class="box" style="height:34px;">
+        <span class="small">9/2 · 42L · 63,500원 · 10.8km/L</span>
+      </div>
+      <div class="box grow">
+        <span class="small" style="color:#999;">이전 기록 더보기 ⌄</span>
+      </div>
+      <div class="footer-tabs">
+        <div class="tab">홈</div>
+        <div class="tab">소모품</div>
+        <div class="tab active">주유</div>
+        <div class="tab">통계</div>
+      </div>
+    </div>
+    <div class="notes">
+      입력은 최소 항목만(주유량·금액·주행거리). 연비는 자동 계산.
+    </div>
+  </div>
+
+  <!-- 통계 -->
+  <div class="frame">
+    <div class="frame-label">④ 통계 / 리포트</div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="box header-box">이번 달 리포트</div>
+      <div class="box" style="height:80px;">
+        <div class="small">📊 월별 유지비 그래프<br>(주유+정비 합산)</div>
+      </div>
+      <div class="box" style="height:70px;">
+        <div class="small">📈 연비 추이 그래프</div>
+      </div>
+      <div class="box" style="height:50px;">
+        <div class="stack">
+          <div class="hstack"><span class="small grow">이번 달 총 유지비</span><span class="small">312,000원</span></div>
+        </div>
+      </div>
+      <div class="box grow">
+        <span class="small" style="color:#999;">지난 달 대비 +8%</span>
+      </div>
+      <div class="footer-tabs">
+        <div class="tab">홈</div>
+        <div class="tab">소모품</div>
+        <div class="tab">주유</div>
+        <div class="tab active">통계</div>
+      </div>
+    </div>
+    <div class="notes">
+      월 단위 유지비 총합 + 연비 추이. 장기적으로 지출 패턴 파악용.
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
