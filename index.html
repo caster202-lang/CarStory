@@ -362,6 +362,51 @@
   @media (max-width: 459px){
     .fab { transform: translateX(calc(-50vw + 44px)); }
   }
+  /* ---------- 인쇄 / PDF ---------- */
+  #printSheet { display:none; }
+  @media print {
+    @page { size: A4; margin: 14mm; }
+    body { background:#fff; }
+    #app, .modal-backdrop, .fab { display:none !important; }
+    #printSheet {
+      display:block;
+      color:#000;
+      font-size:10.5pt;
+      line-height:1.45;
+    }
+    #printSheet .p-head {
+      display:flex; align-items:baseline; justify-content:space-between;
+      border-bottom:1.5pt solid #000; padding-bottom:5pt; margin-bottom:12pt;
+    }
+    #printSheet .p-head b { font-size:14pt; letter-spacing:-0.3pt; }
+    #printSheet .p-head span { font-size:9pt; color:#444; }
+    #printSheet .p-car { margin-bottom:14pt; }
+    #printSheet .p-car .nm { font-size:12pt; font-weight:700; }
+    #printSheet .p-car .odo { font-size:18pt; font-weight:700; letter-spacing:-0.5pt; margin-top:2pt; }
+    #printSheet .p-car .odo i { font-style:normal; font-size:10pt; font-weight:500; }
+    #printSheet h3 {
+      font-size:10pt; margin:14pt 0 5pt;
+      padding-bottom:3pt; border-bottom:0.7pt solid #000;
+      page-break-after:avoid;
+    }
+    #printSheet table { width:100%; border-collapse:collapse; font-size:9.5pt; }
+    #printSheet th, #printSheet td {
+      text-align:left; padding:4pt 3pt;
+      border-bottom:0.4pt solid #bbb;
+      vertical-align:top;
+    }
+    #printSheet th { font-weight:700; border-bottom:0.7pt solid #666; }
+    #printSheet td.num, #printSheet th.num { text-align:right; white-space:nowrap; }
+    #printSheet .urgent td { font-weight:700; }
+    #printSheet .none { font-size:9.5pt; color:#444; padding:5pt 0; }
+    #printSheet .p-sum { font-size:9.5pt; margin-bottom:5pt; }
+    #printSheet .p-foot {
+      margin-top:16pt; padding-top:6pt; border-top:0.4pt solid #bbb;
+      font-size:8pt; color:#555; line-height:1.6;
+    }
+    #printSheet tr { page-break-inside:avoid; }
+  }
+
   @media (prefers-reduced-motion: reduce){
     * { animation: none !important; transition: none !important; }
   }
@@ -466,6 +511,12 @@
         </div>
         <input type="file" id="importFile" accept="application/json,.json" style="display:none" onchange="importData(this)">
         <button class="btn block" style="margin-top:10px;" onclick="loadSampleData()">샘플 데이터 넣어보기</button>
+      </div>
+
+      <div class="card">
+        <h3>내 차 상태 인쇄</h3>
+        <p class="hint">정비소에 보여주거나, 중고차 팔 때 관리 이력을 증명하거나, 기록을 종이·PDF로 남길 때 쓰세요. 인쇄 창에서 <b>대상을 "PDF로 저장"</b>으로 고르면 파일로 받을 수 있습니다.</p>
+        <button class="btn primary block" onclick="printStatus()">인쇄 / PDF로 저장</button>
         <button class="btn block" onclick="resetAll()" style="color:var(--danger); margin-top:12px;">전체 데이터 초기화</button>
       </div>
     </section>
@@ -482,6 +533,9 @@
   </nav>
 
 </div>
+
+<!-- 인쇄 / PDF 저장용 — 화면에는 안 보이고 인쇄할 때만 나온다 -->
+<div id="printSheet"></div>
 
 <!-- 소모품 추가/수정 모달 -->
 <div class="modal-backdrop" id="maintModalBackdrop">
@@ -1439,6 +1493,95 @@ function renderAll(){
   renderHome();
 }
 
+// ---------- 인쇄 / PDF ----------
+const STATUS_LABEL = { danger:'교체 시기 지남', warn:'곧 교체', ok:'양호', muted:'기록 필요' };
+
+// 지금 손봐야 할 항목 — 급한 순
+function urgentItems(){
+  return items
+    .filter(it => { const c = maintStatusOf(it).cls; return c === 'danger' || c === 'warn'; })
+    .sort((a,b) => maintStatusOf(a).rank - maintStatusOf(b).rank);
+}
+function totalFuelCost(){
+  return fuelLogs.reduce((sum, f) => sum + (f.cost || 0), 0);
+}
+function cycleText(it){
+  const p = [];
+  if (it.intervalKm) p.push(it.intervalKm.toLocaleString() + 'km');
+  if (it.intervalMonth) p.push(it.intervalMonth + '개월');
+  return p.join(' / ') || '-';
+}
+function lastText(it){
+  const p = [];
+  if (it.lastKm != null) p.push(it.lastKm.toLocaleString() + 'km');
+  if (it.lastDate) p.push(it.lastDate);
+  return p.join(' · ') || '기록 없음';
+}
+
+function buildPrintSheet(){
+  const today = todayStr();
+  const odo = vehicle && vehicle.odo != null ? vehicle.odo.toLocaleString() : '0';
+  const urgent = urgentItems();
+
+  // ① 정비소용 — 지금 확인할 것
+  const urgentRows = urgent.length
+    ? '<table><thead><tr><th>항목</th><th>상태</th><th class="num">남은 양</th></tr></thead><tbody>' +
+      urgent.map(it => '<tr class="urgent"><td>' + esc(it.name) + '</td><td>' +
+        STATUS_LABEL[maintStatusOf(it).cls] + '</td><td class="num">' + maintLine(it) + '</td></tr>').join('') +
+      '</tbody></table>'
+    : '<div class="none">지금 교체할 항목이 없습니다.</div>';
+
+  // ② 중고차 판매·보관용 — 소모품 전체 이력
+  const allRows = items.length
+    ? '<table><thead><tr><th>항목</th><th>교체 주기</th><th>마지막 교체</th><th>상태</th></tr></thead><tbody>' +
+      [...items].sort((a,b) => {
+        const ra = maintStatusOf(a).rank, rb = maintStatusOf(b).rank;
+        return (ra == null ? Infinity : ra) - (rb == null ? Infinity : rb);
+      }).map(it => '<tr><td>' + esc(it.name) + '</td><td>' + cycleText(it) + '</td><td>' +
+        lastText(it) + '</td><td>' + STATUS_LABEL[maintStatusOf(it).cls] + '</td></tr>').join('') +
+      '</tbody></table>'
+    : '<div class="none">등록된 소모품이 없습니다.</div>';
+
+  // ③ 보관용 — 주유 기록
+  const fuel = sortedFuel().reverse();
+  const fuelRows = fuel.length
+    ? '<div class="p-sum">평균 연비 <b>' + avgEfficiency() + '</b> · 총 주유비 <b>' +
+        totalFuelCost().toLocaleString() + '원</b> · 기록 ' + fuel.length + '건</div>' +
+      '<table><thead><tr><th>주유일</th><th class="num">주유량</th><th class="num">금액</th><th class="num">주행거리</th><th class="num">연비</th></tr></thead><tbody>' +
+      fuel.slice(0, 20).map(f => {
+        const eff = fuelEfficiencyFor(f);
+        return '<tr><td>' + f.date + (isFull(f) ? '' : ' (부분)') + '</td>' +
+          '<td class="num">' + f.liters + 'L</td>' +
+          '<td class="num">' + f.cost.toLocaleString() + '원</td>' +
+          '<td class="num">' + f.odo.toLocaleString() + 'km</td>' +
+          '<td class="num">' + (eff ? eff + 'km/L' : '-') + '</td></tr>';
+      }).join('') +
+      '</tbody></table>' +
+      (fuel.length > 20 ? '<div class="none">최근 20건만 표시했습니다. 전체 기록은 백업 파일에 들어 있습니다.</div>' : '')
+    : '<div class="none">주유 기록이 없습니다.</div>';
+
+  return '<div class="p-head"><b>내 차 상태</b><span>카스토리 · ' + today + ' 기준</span></div>' +
+    '<div class="p-car"><div class="nm">' + esc(vehicleTitle()) +
+      (vehicle && vehicle.year ? ' · ' + vehicle.year + '년식' : '') + '</div>' +
+      '<div class="odo">' + odo + '<i> km</i></div></div>' +
+    '<h3>지금 확인할 것</h3>' + urgentRows +
+    '<h3>소모품 관리 이력</h3>' + allRows +
+    '<h3>주유 기록</h3>' + fuelRows +
+    '<div class="p-foot">' +
+      '교체 주기는 제조사 공식 자료와 국내 정비 관행을 참고한 값입니다. 정확한 주기는 차량 매뉴얼을 확인하세요.<br>' +
+      '카스토리에서 출력 · caster202-lang.github.io/CarStory' +
+    '</div>';
+}
+
+function printStatus(){
+  if (!vehicle && !items.length && !fuelLogs.length){
+    alert('먼저 차량이나 기록을 등록해주세요.');
+    return;
+  }
+  document.getElementById('printSheet').innerHTML = buildPrintSheet();
+  window.print();
+}
+
 // ---------- 자체 점검: 주소 끝에 ?test 를 붙여서 열면 실행됨 ----------
 function selfTest(){
   const okVehicle = vehicle, okFuel = fuelLogs;
@@ -1498,6 +1641,18 @@ function selfTest(){
     a(alsoCandidates('', '와이퍼').length === 2, '겹치지 않으면 모두 후보');
     items = 원래items;
     a(new Set(sampleData().items.map(i => i.name)).size === sampleData().items.length, '예시 데이터에 같은 이름이 없어야 함');
+    // 인쇄물 — 예시 데이터로 세 구역이 모두 채워지는지
+    const 원차 = vehicle, 원항목 = items, 원주유 = fuelLogs;
+    const sp = sampleData();
+    vehicle = sp.vehicle; items = sp.items; fuelLogs = sp.fuelLogs;
+    const 급한것 = urgentItems();
+    const 종이 = buildPrintSheet();
+    const 주유비 = totalFuelCost();
+    vehicle = 원차; items = 원항목; fuelLogs = 원주유;
+    a(급한것.length > 0 && 급한것[0].name === '캐빈(에어컨) 필터', '가장 급한 항목이 맨 앞에');
+    a(주유비 > 0 && 주유비 === sp.fuelLogs.reduce((x,f) => x + (f.cost || 0), 0), '총 주유비 합계');
+    a(종이.indexOf('지금 확인할 것') !== -1 && 종이.indexOf('소모품 관리 이력') !== -1 && 종이.indexOf('주유 기록') !== -1, '인쇄물에 세 구역이 모두 있어야 함');
+    a(종이.indexOf('제네시스 G80') !== -1, '인쇄물에 차량 이름이 있어야 함');
     a(Object.keys(PRESETS).every(n => ITEM_ICON[itemKind(n)]), '모든 프리셋에 아이콘이 있어야 함');
     // 프리셋에만 있고 고르는 목록엔 없는 항목이 생기지 않게 (오일필터가 딱 그랬음)
     const 목록 = [];
