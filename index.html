@@ -381,6 +381,14 @@
     max-height:88vh; overflow-y:auto;
   }
   .modal h2 { margin:0 0 18px; font-size:17px; font-weight:800; letter-spacing:-0.02em; }
+  /* 모달 안에서 "기준 설정"과 "교체 기록"을 나누는 줄 */
+  .group-head {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    margin: 6px 0 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .group-head span { font-size:13.5px; font-weight:700; letter-spacing:-0.01em; }
   .modal-actions { display:flex; gap:8px; margin-top:4px; }
   .grow { flex:1; }
 
@@ -593,28 +601,34 @@
       <label>항목</label>
       <select id="maintPreset" onchange="applyPreset()">
         <option value="">직접 입력</option>
-        <option value="엔진오일">엔진오일</option>
-        <option value="오일필터">오일필터</option>
-        <option value="에어필터">에어필터</option>
-        <option value="캐빈(에어컨) 필터">캐빈(에어컨) 필터</option>
-        <option value="와이퍼">와이퍼</option>
-        <option value="배터리">배터리</option>
-        <option value="타이어">타이어</option>
-        <option value="브레이크 패드">브레이크 패드</option>
-        <option value="브레이크 오일">브레이크 오일</option>
-        <option value="냉각수">냉각수</option>
+        <optgroup label="자주 교체">
+          <option value="엔진오일">엔진오일</option>
+          <option value="오일필터">오일필터</option>
+          <option value="에어필터">에어필터</option>
+          <option value="캐빈(에어컨) 필터">캐빈(에어컨) 필터</option>
+          <option value="와이퍼">와이퍼</option>
+          <option value="배터리">배터리</option>
+          <option value="타이어 위치교환">타이어 위치교환</option>
+        </optgroup>
+        <optgroup label="가끔 교체">
+          <option value="연료필터">연료필터</option>
+          <option value="휠 얼라이먼트">휠 얼라이먼트</option>
+          <option value="타이어">타이어</option>
+          <option value="브레이크 패드">브레이크 패드</option>
+          <option value="브레이크 오일">브레이크 오일</option>
+          <option value="냉각수">냉각수</option>
+          <option value="변속기 오일">변속기 오일</option>
+          <option value="점화플러그">점화플러그</option>
+          <option value="구동벨트">구동벨트</option>
+          <option value="하이텐션코드">하이텐션코드</option>
+        </optgroup>
       </select>
     </div>
-    <div class="field">
-      <label>교체 비용 (원)</label>
-      <input id="maintCost" type="number" placeholder="85000">
-      <p class="hint" style="margin:7px 0 0">함께 교체한 항목까지 합친 금액을 적으세요. 비워두셔도 됩니다.</p>
-    </div>
-    <div id="brandGuide" class="guide" style="display:none"></div>
     <div class="field">
       <label>항목명</label>
       <input id="maintName" placeholder="예: 엔진오일">
     </div>
+    <div id="brandGuide" class="guide" style="display:none"></div>
     <div class="field-row">
       <div class="field">
         <label>교체 주기 (km)</label>
@@ -625,16 +639,24 @@
         <input id="maintIntervalMonth" type="number" placeholder="12">
       </div>
     </div>
-    <button type="button" class="btn sm" onclick="fillToday()" style="margin-bottom:12px">오늘 교체했어요</button>
+    <div class="group-head">
+      <span>마지막 교체</span>
+      <button type="button" class="btn sm primary" onclick="fillToday()">오늘로 채우기</button>
+    </div>
     <div class="field-row">
       <div class="field">
-        <label>마지막 교체 시점(km)</label>
+        <label>주행거리 (km)</label>
         <input id="maintLastKm" type="number" placeholder="17200">
       </div>
       <div class="field">
-        <label>마지막 교체일</label>
+        <label>날짜</label>
         <input id="maintLastDate" type="date">
       </div>
+    </div>
+    <div class="field">
+      <label>교체 비용 (원)</label>
+      <input id="maintCost" type="number" placeholder="85000">
+      <p class="hint" style="margin:7px 0 0">함께 교체한 항목까지 합친 금액을 적으세요. 비워두셔도 됩니다.</p>
     </div>
     <div class="field" id="alsoWrap" style="display:none">
       <label>같이 교체한 항목</label>
@@ -735,23 +757,33 @@ let maintLogs = load(KEYS.logs, []);
 // 공통 기준 (기획서 6.1)
 // 순서는 실제로 얼마나 자주 가는지를 따른다. 자주 손대는 것이 위, 몇 년에 한 번인 것이 아래.
 // 이 순서가 프리셋 목록과 "같이 교체한 항목" 목록에 모두 쓰인다.
+// 기본 주기는 국내 정비 기준표를 따른다. 수입차 매뉴얼보다 짧은데,
+// 국내 주행(시내 정체·짧은 거리 반복)이 대부분 가혹조건에 해당하기 때문이다.
+// 브랜드를 고르면 "제조사 공식 주기"도 함께 보여주니 거기서 바꿀 수 있다.
 const PRESETS = {
   // 자주 교체 — 엔진오일 갈 때 함께 보거나, 1~2년마다 가는 것들
-  '엔진오일': {km:15000, month:12},
-  '오일필터': {km:15000, month:12},   // 엔진오일과 같은 주기 — 거의 항상 함께 교체
-  '에어필터': {km:30000, month:null},
-  '캐빈(에어컨) 필터': {km:20000, month:12},
+  '엔진오일': {km:10000, month:12},
+  '오일필터': {km:10000, month:12},   // 엔진오일과 같은 주기 — 거의 항상 함께 교체
+  '에어필터': {km:10000, month:null},
+  '캐빈(에어컨) 필터': {km:10000, month:12},
   '와이퍼': {km:null, month:12},
-  '배터리': {km:null, month:48},
+  '배터리': {km:null, month:36},
+  '타이어 위치교환': {km:10000, month:null},
   // 가끔 교체 — 수만 km 또는 몇 년에 한 번
-  '타이어': {km:45000, month:null},
-  '브레이크 패드': {km:35000, month:null},
-  '브레이크 오일': {km:null, month:24},
-  '냉각수': {km:null, month:24},
+  '연료필터': {km:20000, month:null},
+  '휠 얼라이먼트': {km:20000, month:null},
+  '타이어': {km:45000, month:null},   // 표는 "마모 상태 점검 후 교환" — 눈으로 꼭 확인할 것
+  '브레이크 패드': {km:40000, month:null},
+  '브레이크 오일': {km:40000, month:24},
+  '냉각수': {km:40000, month:24},
+  '변속기 오일': {km:40000, month:null},
+  '점화플러그': {km:40000, month:null},
+  '구동벨트': {km:40000, month:null},
+  '하이텐션코드': {km:40000, month:null},
 };
 const ITEM_ORDER = Object.keys(PRESETS);
 // 자주 손대는 묶음 (목록 맨 앞에 모아둔다)
-const FREQUENT_SET = ['엔진오일', '오일필터', '에어필터', '캐빈(에어컨) 필터', '와이퍼', '배터리'];
+const FREQUENT_SET = ['엔진오일', '오일필터', '에어필터', '캐빈(에어컨) 필터', '와이퍼', '배터리', '타이어 위치교환'];
 function orderIndex(name){
   const i = ITEM_ORDER.indexOf(name);
   return i === -1 ? 999 : i;   // 직접 지은 이름은 맨 뒤
@@ -949,7 +981,7 @@ function itemKind(name){
   const n = String(name);
   if (n.indexOf('브레이크') !== -1) return n.indexOf('오일') !== -1 ? 'brakeoil' : 'brakepad';
   if (n.indexOf('필터') !== -1){
-    if (n.indexOf('오일') !== -1) return 'oilfilter';
+    if (n.indexOf('오일') !== -1 || n.indexOf('연료') !== -1) return 'oilfilter';  // 둘 다 깡통 모양
     if (n.indexOf('캐빈') !== -1 || n.indexOf('에어컨') !== -1 || n.indexOf('실내') !== -1) return 'cabinfilter';
     return 'airfilter';
   }
@@ -1873,6 +1905,11 @@ function selfTest(){
     a(itemKind('에어필터') === 'airfilter', '에어필터는 주름 판 아이콘');
     a(itemKind('오일필터') === 'oilfilter', '오일필터는 깡통 아이콘');
     a(PRESETS['오일필터'] && PRESETS['와이퍼'], '오일필터와 와이퍼가 프리셋에 있어야 함');
+    a(PRESETS['엔진오일'].km === 10000, '엔진오일은 국내 기준 1만km');
+    a(PRESETS['배터리'].month === 36, '배터리는 3년');
+    ['연료필터','변속기 오일','점화플러그','구동벨트','하이텐션코드','타이어 위치교환','휠 얼라이먼트']
+      .forEach(n => a(PRESETS[n], n + ' 프리셋이 있어야 함'));
+    a(itemKind('연료필터') === 'oilfilter', '연료필터는 깡통 아이콘');
     // 자주 쓰는 것들이 앞에 모여 있어야 한다
     a(orderIndex('엔진오일') === 0, '엔진오일이 맨 앞');
     a(orderIndex('오일필터') === 1 && orderIndex('에어필터') === 2 && orderIndex('캐빈(에어컨) 필터') === 3, '오일·필터류가 뒤따름');
