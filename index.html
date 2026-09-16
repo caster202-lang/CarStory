@@ -109,16 +109,6 @@
   .cluster > * { position:relative; }
   .cluster-head { display:flex; align-items:center; gap:11px; margin-bottom:18px; }
   .cluster-head .brand-badge { width:40px; height:40px; font-size:15px; border-radius:13px; }
-  /* 자동차 로고는 대부분 가로로 길다. 정사각형 칸에 넣으면 세로 12~20px로 작아져서
-     칸을 가로로 넓혀 로고가 제 크기로 보이게 한다. */
-  .car-logo {
-    width:54px; height:40px; border-radius:12px;
-    background:#fff;
-    display:flex; align-items:center; justify-content:center;
-    flex:none;
-    box-shadow: 0 1px 3px rgba(16,24,40,.14);
-  }
-  .car-logo img { width:46px; height:32px; object-fit:contain; display:block; }
   .car { font-size:14.5px; font-weight:700; letter-spacing:-0.01em; }
   .car-sub { font-size:11.5px; color: var(--ink-dim); margin-top:3px; }
   .cluster .read { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; }
@@ -310,6 +300,13 @@
     letter-spacing:-0.02em;
     flex:none;
   }
+  .brand-chip {
+    display:inline-flex; align-items:center;
+    padding:5px 10px; border-radius:9px;
+    color:#fff; font-size:11.5px; font-weight:700;
+    letter-spacing:-0.02em; white-space:nowrap; flex:none;
+  }
+  .cluster-head .brand-chip { font-size:13px; padding:7px 12px; border-radius:11px; }
   .brand-list {
     margin-top:8px; max-height:300px; overflow-y:auto;
     border:1px solid var(--line); border-radius:14px;
@@ -932,37 +929,19 @@ const BRAND_COLOR = {
   'BYD':'#2e8b57','지커':'#2b3a6b','기타':'#6b6f76'
 };
 
-// 공개 데이터셋(car-logos-dataset, MIT)에서 로고를 가져온다.
-// 로고 그림 자체는 각 제조사의 상표이므로, 내 차를 표시하는 용도로만 쓴다.
-const LOGO_BASE = 'https://cdn.jsdelivr.net/gh/filippofilip95/car-logos-dataset@master/logos/optimized/';
-const BRAND_SLUG = {
-  '현대':'hyundai', '기아':'kia', '제네시스':'genesis', '르노코리아':'renault-samsung', 'KG모빌리티':'ssangyong',
-  '벤츠':'mercedes-benz', 'BMW':'bmw', '아우디':'audi', '폭스바겐':'volkswagen', '포르쉐':'porsche',
-  '볼보':'volvo', '폴스타':'polestar', '미니':'mini', '랜드로버':'land-rover', '재규어':'jaguar',
-  '벤틀리':'bentley', '롤스로이스':'rolls-royce', '렉서스':'lexus', '토요타':'toyota', '혼다':'honda',
-  '닛산':'nissan', '인피니티':'infiniti', '포드':'ford', '링컨':'lincoln', '지프':'jeep',
-  '쉐보레':'chevrolet', '캐딜락':'cadillac', 'GMC':'gmc', '뷰익':'buick', '테슬라':'tesla',
-  '페라리':'ferrari', '람보르기니':'lamborghini', '마세라티':'maserati',
-  '푸조':'peugeot', '시트로엥':'citroen', 'BYD':'byd', '지커':'zeekr',
-};
-
-// 홈 차량 카드에만 실제 로고를 쓴다. 목록에서는 작아서 알아보기 어렵고,
-// 37줄에 그림을 다 넣으면 느려지기 때문에 거기는 색 배지를 그대로 둔다.
-function brandLogo(name){
-  if (!name) return '<span class="brand-badge" style="background:var(--ink-faint)">–</span>';
-  const slug = BRAND_SLUG[name];
-  if (!slug) return brandBadge(name);
-  // 인터넷이 안 되거나 그림을 못 불러오면 원래 색 배지로 되돌린다 (빈칸이 남지 않게)
-  return '<span class="car-logo">' +
-    '<img src="' + LOGO_BASE + slug + '.png" alt="' + esc(name) + ' 로고" referrerpolicy="no-referrer"' +
-    ' onerror="this.parentNode.outerHTML=brandBadge(&quot;' + name + '&quot;)">' +
-    '</span>';
-}
-
 function brandBadge(name){
   const ch = name === '기타' ? '·' : name.charAt(0).toUpperCase();
   return '<span class="brand-badge" style="background:' + (BRAND_COLOR[name] || '#6b6f76') + '">' + esc(ch) + '</span>';
 }
+
+// 브랜드 색 바탕에 브랜드 이름을 통째로 넣은 칩.
+// 제조사 로고 이미지는 쓰지 않는다. 상표라서 공개·수익화 시 브랜드마다 조건을 따로 확인해야 한다.
+function brandChip(name){
+  if (!name || name === '기타') return '';
+  return '<span class="brand-chip" style="background:' + (BRAND_COLOR[name] || '#6b6f76') + '">' +
+    esc(name) + '</span>';
+}
+
 function setBrand(v){
   document.getElementById('vBrand').value = v || '';
   document.getElementById('brandBtnInner').innerHTML = v
@@ -980,11 +959,12 @@ function toggleBrandList(){
   el.hidden = false;
 }
 
+// 브랜드는 칩이 보여주므로 제목은 모델명만 쓴다.
+// 모델명을 안 적은 차는 보여줄 게 없으니 브랜드로 대신한다.
 function vehicleTitle(){
   if (!vehicle) return '차량 미등록';
   const brand = vehicle.brand === '기타' ? '' : vehicle.brand;
-  const t = [brand, vehicle.name].filter(Boolean).join(' ').trim();
-  return t || '차량 미등록';
+  return (vehicle.name || '').trim() || brand || '차량 미등록';
 }
 
 function esc(s){
@@ -1971,8 +1951,10 @@ function avgEfficiency(){
 function renderHome(){
   document.getElementById('homeVehicleName').textContent = vehicleTitle();
 
-  const brand = vehicle && vehicle.brand && vehicle.brand !== '기타' ? vehicle.brand : null;
-  document.getElementById('homeBadgeWrap').innerHTML = brandLogo(brand);
+  // 제목이 모델명을 보여줄 때만 칩을 붙인다.
+  // 모델명이 없으면 제목이 브랜드를 대신 쓰므로 칩까지 붙이면 같은 말이 두 번 나온다.
+  const 칩쓸까 = !!(vehicle && (vehicle.name || '').trim() && vehicle.brand);
+  document.getElementById('homeBadgeWrap').innerHTML = 칩쓸까 ? brandChip(vehicle.brand) : '';
   // 제목에 이미 브랜드가 들어가므로 여기선 연식과 등록 대수 정보만
   document.getElementById('homeVehicleSub').textContent = vehicle
     ? (vehicle.year ? vehicle.year + '년식' : '연식 미입력')
@@ -2094,7 +2076,7 @@ function buildPrintSheet(){
     : '<div class="none">' + words().행위 + ' 기록이 없습니다.</div>';
 
   return '<div class="p-head"><b>내 차 상태</b><span>카스토리 · ' + today + ' 기준</span></div>' +
-    '<div class="p-car"><div class="nm">' + esc(vehicleTitle()) +
+    '<div class="p-car"><div class="nm">' + (vehicle && vehicle.brand && vehicle.brand !== '기타' ? esc(vehicle.brand) + ' ' : '') + esc(vehicleTitle()) +
       (vehicle && vehicle.year ? ' · ' + vehicle.year + '년식' : '') + '</div>' +
       '<div class="odo">' + odo + '<i> km</i></div></div>' +
     '<h3>지금 확인할 것</h3>' + urgentRows +
@@ -2400,11 +2382,23 @@ function selfTest(){
     a(BRAND_OIL['렉서스'] === BRAND_OIL['토요타'], '같은 그룹은 같은 기준 공유');
     a(BRAND_OIL['현대'] === BRAND_OIL['기아'], '현대·기아·제네시스는 같은 기준 공유');
     a(BRANDS_ALL.every(b => BRAND_COLOR[b]), '모든 브랜드에 배지 색이 있어야 함');
-    a(BRANDS_ALL.filter(b => b !== '기타').every(b => BRAND_SLUG[b]), '기타를 뺀 모든 브랜드에 로고 파일 이름이 있어야 함');
-    a(Object.keys(BRAND_SLUG).every(b => BRANDS_ALL.indexOf(b) !== -1), '목록에 없는 브랜드의 로고가 남아있으면 안 됨');
-    a(brandLogo('BMW').indexOf('bmw.png') !== -1, '브랜드를 고르면 로고 주소가 만들어짐');
-    a(brandLogo('기타').indexOf('brand-badge') !== -1, '로고가 없는 항목은 색 배지로');
-    a(brandLogo('').indexOf('brand-badge') !== -1, '차량 미등록이면 색 배지로');
+    a(brandChip('제네시스').indexOf('제네시스') !== -1, '칩에 브랜드 이름이 통째로 들어간다');
+    a(brandChip('제네시스').indexOf(BRAND_COLOR['제네시스']) !== -1, '칩에 브랜드 색이 쓰인다');
+    a(brandChip('기타') === '', '브랜드가 기타면 칩을 만들지 않는다');
+    a(brandChip('') === '', '브랜드가 없으면 칩을 만들지 않는다');
+    const 원차칩 = vehicle;
+    vehicle = { brand:'제네시스', name:'G80', odo:100 };
+    a(vehicleTitle() === 'G80', '제목은 모델명만 보여준다');
+    vehicle = { brand:'BMW', name:'', odo:100 };
+    a(vehicleTitle() === 'BMW', '모델명이 없으면 브랜드로 대신한다');
+    vehicle = { brand:'기타', name:'내 차', odo:100 };
+    a(vehicleTitle() === '내 차', '기타 브랜드면 모델명만');
+    vehicle = { brand:'제네시스', name:'G80', odo:100 };
+    renderHome();
+    const 홈표시 = document.getElementById('homeBadgeWrap').innerHTML +
+                   document.getElementById('homeVehicleName').textContent;
+    a(홈표시.split('제네시스').length - 1 === 1, '홈 카드에 브랜드 이름이 한 번만 나온다');
+    vehicle = 원차칩;
     a(Object.keys(BRAND_OIL).every(b => BRANDS_ALL.indexOf(b) !== -1), '오일 기준이 있는 브랜드는 목록에도 있어야 함');
     a(EV_BRANDS.every(b => BRANDS_ALL.indexOf(b) !== -1), '전기차 브랜드도 목록에 있어야 함');
     a(new Set(BRANDS_ALL).size === BRANDS_ALL.length, '브랜드 중복 없음');
