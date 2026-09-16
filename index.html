@@ -306,6 +306,16 @@
     letter-spacing:-0.02em; white-space:nowrap; flex:none;
   }
   .cluster-head .brand-chip { font-size:13px; padding:7px 12px; border-radius:11px; }
+  #homeCarHead { cursor:pointer; }
+  .veh-row {
+    display:flex; align-items:center; gap:10px; width:100%;
+    padding:11px 12px; margin-bottom:8px;
+    border:1px solid var(--line); border-radius:12px;
+    background:var(--surface); color:var(--ink);
+    font-family:var(--font); font-size:13.5px; text-align:left; cursor:pointer;
+  }
+  .veh-row.on { border-color:var(--accent); background:var(--accent-soft); }
+  .veh-row .veh-sub { margin-left:auto; font-size:11.5px; color:var(--ink-dim); }
   .brand-list {
     margin-top:8px; max-height:300px; overflow-y:auto;
     border:1px solid var(--line); border-radius:14px;
@@ -475,7 +485,7 @@
     <section class="screen active" id="screen-home">
       <div id="backupNotice"></div>
       <div class="cluster">
-        <div class="cluster-head">
+        <div class="cluster-head" id="homeCarHead" onclick="openVehicleList()">
           <span id="homeBadgeWrap"></span>
           <div>
             <div class="car" id="homeVehicleName">차량 미등록</div>
@@ -546,6 +556,7 @@
           </button>
           <div class="brand-list" id="brandList" hidden></div>
         </div>
+        <input type="hidden" id="vEditId">
         <div class="field">
           <label>모델명</label>
           <input id="vMakeModel" placeholder="예: 320d">
@@ -708,6 +719,17 @@
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeFuelModal()">취소</button>
       <button class="btn primary grow" onclick="saveFuel()">저장</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="vehicleListBackdrop">
+  <div class="modal">
+    <h2>내 차</h2>
+    <div id="vehicleList"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeVehicleList()">닫기</button>
+      <button class="btn primary" onclick="startNewVehicle()">차 추가</button>
     </div>
   </div>
 </div>
@@ -1151,7 +1173,11 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', pai
 
 // ---------- 화면 전환 ----------
 document.querySelectorAll('.tab-btn').forEach(btn=>{
-  btn.addEventListener('click', ()=> switchScreen(btn.dataset.screen));
+  btn.addEventListener('click', ()=>{
+    // 탭바로 차량 탭을 열면 늘 선택된 차를 고치는 화면이다. "차 추가"로 비워둔 폼이 남아 있으면 안 된다.
+    if (btn.dataset.screen === 'vehicle') renderVehicleForm();
+    switchScreen(btn.dataset.screen);
+  });
 });
 function switchScreen(name){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -1175,8 +1201,49 @@ document.getElementById('btnUpdateOdo').addEventListener('click', ()=>{
   if (v.trim() !== '' && Number.isFinite(n)) { vehicle.odo = n; saveVehicles(); renderAll(); }
 });
 
+// ---------- 차량 고르기 ----------
+function openVehicleList(){
+  if (!vehicles.length) return;   // 등록된 차가 없으면 열 것이 없다
+  renderVehicleList();
+  document.getElementById('vehicleListBackdrop').classList.add('open');
+}
+function closeVehicleList(){
+  document.getElementById('vehicleListBackdrop').classList.remove('open');
+}
+function renderVehicleList(){
+  const el = document.getElementById('vehicleList');
+  if (!el) return;
+  el.innerHTML = vehicles.map(v => {
+    const 이름 = (v.name || '').trim() || (v.brand === '기타' ? '' : v.brand) || '이름 없는 차';
+    const 칩 = (v.name || '').trim() && v.brand ? brandChip(v.brand) : '';
+    const 거리 = v.odo != null ? v.odo.toLocaleString() + 'km' : '';
+    return '<button class="veh-row' + (v.id === activeId ? ' on' : '') + '" ' +
+      'onclick="pickVehicle(\'' + v.id + '\')">' + 칩 +
+      '<span>' + esc(이름) + '</span>' +
+      '<span class="veh-sub">' + 거리 + '</span></button>';
+  }).join('');
+}
+function pickVehicle(id){
+  selectVehicle(id);
+  closeVehicleList();
+  renderAll();
+  switchScreen('home');
+}
+// 새 차를 만드는 입구는 여기 하나뿐이다.
+// 차량 탭을 그냥 열었을 때는 선택된 차를 고치는 화면이라 새 차가 생기지 않는다.
+function startNewVehicle(){
+  closeVehicleList();
+  document.getElementById('vEditId').value = '';
+  setBrand('');
+  document.getElementById('vMakeModel').value = '';
+  document.getElementById('vFuel').value = '';
+  document.getElementById('vYear').value = '';
+  document.getElementById('vOdo').value = '';
+  switchScreen('vehicle');
+}
 // ---------- 차량 ----------
 function renderVehicleForm(){
+  document.getElementById('vEditId').value = vehicle ? vehicle.id : '';
   if (!vehicle){ setBrand(''); return; }
   setBrand(BRANDS_ALL.indexOf(vehicle.brand) !== -1 ? vehicle.brand : '');
   document.getElementById('vMakeModel').value = vehicle.name || '';
@@ -1192,16 +1259,19 @@ function saveVehicle(){
   if (!brand && !name) { alert('브랜드나 모델명 중 하나는 입력해주세요'); return; }
   const fuel = document.getElementById('vFuel').value;
   const data = { brand, name, fuel, year, odo: odo != null ? odo : 0 };
-  // 이미 차가 있으면 그 자리를 고친다. id를 새로 만들면 그 차 기록이 전부 미아가 된다.
-  if (vehicle){
-    Object.assign(vehicle, data);
+  const editId = document.getElementById('vEditId').value;
+  // id를 새로 만들면 그 차에 붙어 있던 기록이 전부 미아가 된다. 고칠 때는 반드시 유지한다.
+  if (editId){
+    const i = vehicles.findIndex(v => v.id === editId);
+    vehicles[i] = {...vehicles[i], ...data};
+    saveVehicles();
+    selectVehicle(editId);
   } else {
     const v = { id: newVehicleId(), ...data };
     vehicles.push(v);
-    activeId = v.id;
+    saveVehicles();
+    selectVehicle(v.id);
   }
-  saveVehicles();
-  selectVehicle(activeId);
   renderAll();
   switchScreen('home');
 }
@@ -2511,6 +2581,47 @@ function selfTest(){
     vehicles = [];
     selectVehicle(null);
     a(vehicle === null && items.length === 0, '차가 없으면 빈 상태가 된다');
+
+    // 차를 고치면 id가 유지돼야 한다. id가 바뀌면 그 차 기록이 전부 미아가 된다.
+    vehicles = [{ id:'vA', brand:'BMW', name:'320d', fuel:'diesel', year:2021, odo:1000 }];
+    allItems = [{ id:'i1', name:'엔진오일', vehicleId:'vA' }];
+    selectVehicle('vA');
+    document.getElementById('vEditId').value = 'vA';
+    document.getElementById('vBrand').value = 'BMW';
+    document.getElementById('vMakeModel').value = '330i';
+    document.getElementById('vFuel').value = 'gas';
+    document.getElementById('vYear').value = '2022';
+    document.getElementById('vOdo').value = '1500';
+    saveVehicle();
+    a(vehicles.length === 1, '고치는 것이지 새로 만드는 게 아니다');
+    a(vehicles[0].id === 'vA', '차를 고쳐도 id가 유지된다');
+    a(vehicles[0].name === '330i' && vehicles[0].fuel === 'gas', '고친 내용이 반영된다');
+    a(items.length === 1, 'id가 유지되므로 기록도 그대로 붙어 있다');
+
+    // 새 차를 저장하면 목록에 더해지고 그 차가 활성이 된다
+    document.getElementById('vEditId').value = '';
+    document.getElementById('vBrand').value = '기아';
+    document.getElementById('vMakeModel').value = 'K5';
+    document.getElementById('vFuel').value = 'gas';
+    document.getElementById('vYear').value = '';
+    document.getElementById('vOdo').value = '10';
+    saveVehicle();
+    a(vehicles.length === 2, '새 차가 목록에 더해진다');
+    a(vehicle.name === 'K5', '새로 만든 차가 활성 차량이 된다');
+    a(items.length === 0, '새 차는 기록이 비어 있다');
+    a(vehicles[0].id !== vehicles[1].id, '차마다 id가 다르다');
+
+    // 목록에 등록된 차가 모두 나온다
+    renderVehicleList();
+    const 차목록 = document.getElementById('vehicleList').innerHTML;
+    a(차목록.indexOf('330i') !== -1 && 차목록.indexOf('K5') !== -1, '목록에 등록된 차가 모두 나온다');
+
+    // "차 추가"로 폼을 비운 뒤 탭바로 차량 탭을 다시 열면 선택된 차 수정 화면으로 돌아와야 한다
+    startNewVehicle();
+    a(document.getElementById('vEditId').value === '', '차 추가를 누르면 빈 폼이 된다');
+    document.querySelector('.tab-btn[data-screen="vehicle"]').click();
+    a(document.getElementById('vEditId').value === vehicle.id, '탭바로 차량 탭을 열면 선택된 차를 고치는 폼이 된다');
+    switchScreen('home');
 
     vehicles = 원다중.vehicles; activeId = 원다중.activeId;
     allItems = 원다중.allItems; allFuel = 원다중.allFuel; allLogs = 원다중.allLogs;
