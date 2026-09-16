@@ -365,11 +365,14 @@
   /* ---------- 인쇄 / PDF ---------- */
   #printSheet { display:none; }
   @media print {
-    @page { size: A4; margin: 14mm; }
-    body { background:#fff; }
+    @page { size: A4; margin: 12mm; }
+    /* 화면에서는 body가 가운데 정렬(flex)이라 인쇄할 때 내용이 페이지 폭을
+       못 채우고 좁게 몰렸다. 인쇄할 때는 일반 블록으로 되돌린다. */
+    body { background:#fff; display:block; }
     #app, .modal-backdrop, .fab { display:none !important; }
     #printSheet {
       display:block;
+      width:100%;
       color:#000;
       font-size:10.5pt;
       line-height:1.45;
