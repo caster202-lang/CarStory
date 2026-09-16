@@ -1144,13 +1144,18 @@ document.getElementById('maintName').addEventListener('input', renderBrandGuide)
 // 에어필터·캐빈필터는 주기가 달라서 자동으로 체크하지 않고, 필요할 때 직접 고르게 둔다.
 const TOGETHER = { '엔진오일': ['오일필터'], '오일필터': ['엔진오일'] };
 
+// 같이 교체할 후보 — 지금 쓰고 있는 항목 자신과, 이름이 같은 항목은 뺀다
+function alsoCandidates(editId, name){
+  return items.filter(i => i.id !== editId && i.name !== name);
+}
 function renderAlsoList(){
   const wrap = document.getElementById('alsoWrap');
   const list = document.getElementById('alsoList');
   const editId = document.getElementById('maintEditId').value;
-  const others = items.filter(i => i.id !== editId);
+  const name = document.getElementById('maintName').value.trim();
+  const others = alsoCandidates(editId, name);
   if (!others.length){ wrap.style.display = 'none'; list.innerHTML = ''; return; }
-  const auto = TOGETHER[document.getElementById('maintName').value.trim()] || [];
+  const auto = TOGETHER[name] || [];
   wrap.style.display = 'block';
   list.innerHTML = others.map(i =>
     '<label class="also-item"><input type="checkbox" value="' + i.id + '"' +
@@ -1169,8 +1174,14 @@ function saveMaintItem(){
     lastDate: fixDateValue(document.getElementById('maintLastDate').value, todayStr()) || null,
   };
   const editId = document.getElementById('maintEditId').value;
-  if (editId){
-    const idx = items.findIndex(i=>i.id===editId);
+  // 이미 있는 이름으로 또 만들면 같은 항목이 두 개가 된다.
+  // 새로 만드는 대신 기존 항목에 이번 기록을 반영한다.
+  const dup = editId ? null : items.find(i => i.name === name);
+  if (dup && !confirm('"' + name + '"은(는) 이미 등록돼 있어요.\n새로 만들지 않고 기존 항목에 이번 기록을 반영할까요?')) return;
+
+  const targetId = editId || (dup ? dup.id : null);
+  if (targetId){
+    const idx = items.findIndex(i => i.id === targetId);
     items[idx] = {...items[idx], ...data};
   } else {
     items.push({ id: 'm'+Date.now(), ...data });
@@ -1479,6 +1490,14 @@ function selfTest(){
     a(fixDateValue('2025-03-15', '2026-09-16') === '2025-03-15', '정상 날짜는 그대로');
     a(fixDateValue('', '2026-09-16') === '', '빈 칸은 빈 칸으로');
     a(TOGETHER['엔진오일'].indexOf('오일필터') !== -1, '엔진오일을 갈면 오일필터가 함께 체크돼야 함');
+    // 같이 교체 목록에 자기 자신이나 같은 이름이 끼어들면 안 된다
+    const 원래items = items;
+    items = [{id:'a', name:'엔진오일'}, {id:'b', name:'오일필터'}];
+    a(alsoCandidates('', '오일필터').length === 1, '같은 이름 항목은 같이 교체 목록에서 빠져야 함');
+    a(alsoCandidates('a', '엔진오일').length === 1, '수정 중인 항목 자신도 빠져야 함');
+    a(alsoCandidates('', '와이퍼').length === 2, '겹치지 않으면 모두 후보');
+    items = 원래items;
+    a(new Set(sampleData().items.map(i => i.name)).size === sampleData().items.length, '예시 데이터에 같은 이름이 없어야 함');
     a(Object.keys(PRESETS).every(n => ITEM_ICON[itemKind(n)]), '모든 프리셋에 아이콘이 있어야 함');
     // 프리셋에만 있고 고르는 목록엔 없는 항목이 생기지 않게 (오일필터가 딱 그랬음)
     const 목록 = [];
