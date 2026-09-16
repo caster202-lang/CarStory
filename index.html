@@ -332,13 +332,6 @@
   }
   .also-item:last-child { border-bottom:none; }
   .also-item input { width:18px; height:18px; accent-color: var(--accent); flex:none; }
-  .also-group {
-    padding:8px 12px 6px;
-    font-size:11px; font-weight:700;
-    color: var(--ink-dim);
-    background: var(--surface-2);
-    border-bottom:1px solid var(--line);
-  }
 
   .guide { background: var(--surface-2); border-radius:14px; padding:14px; margin-bottom:14px; }
   .guide-title { font-size:11.5px; font-weight:700; color: var(--ink-dim); margin-bottom:10px; }
@@ -346,6 +339,7 @@
   .guide-pick { flex:1; flex-direction:column; gap:4px; line-height:1.3; text-align:center; font-size:12px; padding:10px 8px; }
   .guide-pick b { font-size:13px; font-weight:700; letter-spacing:-0.01em; }
   .guide-note { font-size:11.5px; line-height:1.6; color: var(--ink-dim); margin-top:10px; }
+  .guide-caveat { display:block; margin-top:7px; }
 
   /* ---------- 탭바 ---------- */
   nav.tabbar {
@@ -1248,6 +1242,11 @@ function fmtCycle(c){
   if (c.month) p.push(c.month+'개월');
   return p.join(' / ');
 }
+// "※ 참고값…" 부분은 성격이 달라서 한 줄 내려 적는다
+function noteHtml(note){
+  const parts = String(note).split(' ※ ');
+  return esc(parts[0]) + (parts[1] ? '<span class="guide-caveat">※ ' + esc(parts[1]) + '</span>' : '');
+}
 function renderBrandGuide(){
   const el = document.getElementById('brandGuide');
   const brand = vehicle && vehicle.brand;
@@ -1278,7 +1277,7 @@ function renderBrandGuide(){
       '<button type="button" class="btn sm guide-pick" onclick="pickStandard(&quot;official&quot;)">제조사 공식<b>' + fmtCycle(g.official) + '</b></button>' +
       '<button type="button" class="btn sm guide-pick" onclick="pickStandard(&quot;local&quot;)">국내 실주행 권장<b>' + fmtCycle(g.local) + '</b></button>' +
     '</div>' +
-    '<div class="guide-note">' + esc(g.note) + '</div>';
+    '<div class="guide-note">' + noteHtml(g.note) + '</div>';
 }
 
 function pickStandard(kind){
@@ -1319,18 +1318,11 @@ function renderAlsoList(){
   const auto = TOGETHER[name] || [];
   wrap.style.display = 'block';
 
-  const 자주 = others.filter(i => FREQUENT_SET.indexOf(i.name) !== -1);
-  const 나머지 = others.filter(i => FREQUENT_SET.indexOf(i.name) === -1);
-  const row = i => '<label class="also-item"><input type="checkbox" value="' + i.id + '"' +
-    (auto.indexOf(i.name) !== -1 ? ' checked' : '') + '>' + esc(i.name) + '</label>';
-  // 양쪽 다 있을 때만 묶음 제목을 보여준다 (한쪽뿐이면 괜한 줄만 늘어난다)
-  const 제목보임 = 자주.length > 0 && 나머지.length > 0;
-
-  list.innerHTML =
-    (제목보임 ? '<div class="also-group">자주 교체</div>' : '') +
-    자주.map(row).join('') +
-    (제목보임 ? '<div class="also-group">가끔 교체</div>' : '') +
-    나머지.map(row).join('');
+  // 자주 쓰는 것이 이미 위에 모여 있으므로(alsoCandidates가 정렬), 제목 줄은 두지 않는다
+  list.innerHTML = others.map(i =>
+    '<label class="also-item"><input type="checkbox" value="' + i.id + '"' +
+    (auto.indexOf(i.name) !== -1 ? ' checked' : '') + '>' + esc(i.name) + '</label>'
+  ).join('');
 }
 
 // 오늘 교체한 걸로 빠르게 채우기
@@ -1910,6 +1902,9 @@ function selfTest(){
     ['연료필터','변속기 오일','점화플러그','구동벨트','하이텐션코드','타이어 위치교환','휠 얼라이먼트']
       .forEach(n => a(PRESETS[n], n + ' 프리셋이 있어야 함'));
     a(itemKind('연료필터') === 'oilfilter', '연료필터는 깡통 아이콘');
+    // 참고값 문구는 본문과 줄을 나눠서 보여준다
+    a(noteHtml('본문입니다. ※ 참고값입니다.').indexOf('guide-caveat') !== -1, '참고값은 줄을 나눠 표시');
+    a(noteHtml('본문만 있습니다.').indexOf('guide-caveat') === -1, '참고값이 없으면 줄을 나누지 않음');
     // 자주 쓰는 것들이 앞에 모여 있어야 한다
     a(orderIndex('엔진오일') === 0, '엔진오일이 맨 앞');
     a(orderIndex('오일필터') === 1 && orderIndex('에어필터') === 2 && orderIndex('캐빈(에어컨) 필터') === 3, '오일·필터류가 뒤따름');
