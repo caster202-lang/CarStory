@@ -716,7 +716,8 @@
 // ---------- 데이터 계층 (localStorage) ----------
 // 저장 키. 오픈 전이라 예전 mile_* 키를 읽어오는 코드는 두지 않는다.
 // 오픈한 뒤에는 이 이름을 바꾸면 안 된다. 바꾸는 순간 사용자가 쌓은 기록을 못 읽는다.
-const KEYS = { vehicle:'carstory_vehicle', items:'carstory_items', fuel:'carstory_fuel', logs:'carstory_logs' };
+const KEYS = { vehicles:'carstory_vehicles', active:'carstory_active',
+               items:'carstory_items', fuel:'carstory_fuel', logs:'carstory_logs' };
 
 function load(key, fallback){
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
@@ -758,12 +759,53 @@ function numOf(id){
   return Number.isFinite(n) ? n : null;
 }
 
-let vehicle = load(KEYS.vehicle, null);
-let items = load(KEYS.items, []);
-let fuelLogs = load(KEYS.fuel, []);
-// 교체할 때마다 쌓이는 이력. 소모품 항목은 "마지막 교체"만 들고 있어서
-// 월별 유지비를 그리려면 이력이 따로 있어야 한다.
-let maintLogs = load(KEYS.logs, []);
+// 저장되는 원본 — 전 차량 것이 한 덩어리로 들어 있고, 기록마다 vehicleId가 붙어 있다
+let vehicles = load(KEYS.vehicles, []);
+let activeId = load(KEYS.active, null);
+let allItems = load(KEYS.items, []);
+let allFuel  = load(KEYS.fuel, []);
+let allLogs  = load(KEYS.logs, []);
+
+// 화면이 쓰는 뷰 — 활성 차량 것만 걸러낸 복사본.
+// 이름을 예전 그대로 두는 게 핵심이다. 이 값들을 읽기만 하는 코드는 한 줄도 고칠 필요가 없다.
+let vehicle = null, items = [], fuelLogs = [], maintLogs = [];
+
+function newVehicleId(){
+  return 'v' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+// 활성 차량을 바꾸고 뷰 네 개를 다시 만든다.
+// 없는 id를 주면 첫 번째 차로, 차가 하나도 없으면 빈 상태로 맞춘다.
+function selectVehicle(id){
+  const found = vehicles.find(v => v.id === id) || vehicles[0] || null;
+  activeId  = found ? found.id : null;
+  vehicle   = found;
+  items     = allItems.filter(x => x.vehicleId === activeId);
+  fuelLogs  = allFuel.filter(x  => x.vehicleId === activeId);
+  maintLogs = allLogs.filter(x  => x.vehicleId === activeId);
+  save(KEYS.active, activeId);
+}
+// 뷰는 복사본이라 그대로 저장하면 다른 차 기록이 통째로 날아간다.
+// 전체 목록에서 활성 차량 몫만 걷어내고 지금 뷰로 갈아끼운다.
+function saveItems(){
+  items = items.map(x => x.vehicleId === activeId ? x : {...x, vehicleId: activeId});
+  allItems = allItems.filter(x => x.vehicleId !== activeId).concat(items);
+  save(KEYS.items, allItems);
+}
+// 주유 헬퍼는 기존 폼 핸들러 saveFuel과 이름이 겹쳐 saveFuelLogs로 지었다.
+function saveFuelLogs(){
+  fuelLogs = fuelLogs.map(x => x.vehicleId === activeId ? x : {...x, vehicleId: activeId});
+  allFuel = allFuel.filter(x => x.vehicleId !== activeId).concat(fuelLogs);
+  save(KEYS.fuel, allFuel);
+}
+function saveLogs(){
+  maintLogs = maintLogs.map(x => x.vehicleId === activeId ? x : {...x, vehicleId: activeId});
+  allLogs = allLogs.filter(x => x.vehicleId !== activeId).concat(maintLogs);
+  save(KEYS.logs, allLogs);
+}
+function saveVehicles(){
+  save(KEYS.vehicles, vehicles);
+  save(KEYS.active, activeId);
+}
 
 // 공통 기준 (기획서 6.1)
 // 순서는 실제로 얼마나 자주 가는지를 따른다. 자주 손대는 것이 위, 몇 년에 한 번인 것이 아래.
@@ -1130,7 +1172,7 @@ document.getElementById('btnUpdateOdo').addEventListener('click', ()=>{
   const v = prompt('현재 주행거리를 입력하세요 (km)', vehicle.odo != null ? vehicle.odo : '');
   if (v === null) return;
   const n = Number(v.trim());
-  if (v.trim() !== '' && Number.isFinite(n)) { vehicle.odo = n; save(KEYS.vehicle, vehicle); renderAll(); }
+  if (v.trim() !== '' && Number.isFinite(n)) { vehicle.odo = n; saveVehicles(); renderAll(); }
 });
 
 // ---------- 차량 ----------
@@ -1149,8 +1191,17 @@ function saveVehicle(){
   const odo = numOf('vOdo');
   if (!brand && !name) { alert('브랜드나 모델명 중 하나는 입력해주세요'); return; }
   const fuel = document.getElementById('vFuel').value;
-  vehicle = { brand, name, fuel, year, odo: odo != null ? odo : 0 };
-  save(KEYS.vehicle, vehicle);
+  const data = { brand, name, fuel, year, odo: odo != null ? odo : 0 };
+  // 이미 차가 있으면 그 자리를 고친다. id를 새로 만들면 그 차 기록이 전부 미아가 된다.
+  if (vehicle){
+    Object.assign(vehicle, data);
+  } else {
+    const v = { id: newVehicleId(), ...data };
+    vehicles.push(v);
+    activeId = v.id;
+  }
+  saveVehicles();
+  selectVehicle(activeId);
   renderAll();
   switchScreen('home');
 }
@@ -1216,23 +1267,27 @@ function sampleData(fuel){
 }
 
 function loadSampleData(){
-  if (!confirm('지금 저장된 기록을 지우고 예시 데이터를 넣을까요?\n실제로 쓰실 때는 "전체 데이터 초기화"로 지우고 시작하세요.')) return;
+  if (!confirm('예시 차량을 하나 추가할까요?\n지금 등록된 차와 기록은 그대로 남아요.')) return;
   const sel = document.getElementById('sampleFuel');
   const s = sampleData(sel ? sel.value : 'gas');
-  vehicle = s.vehicle; items = s.items; fuelLogs = s.fuelLogs;
-  save(KEYS.vehicle, vehicle); save(KEYS.items, items); save(KEYS.fuel, fuelLogs);
+  const v = { id: newVehicleId(), ...s.vehicle };
+  vehicles.push(v);
+  saveVehicles();
+  selectVehicle(v.id);
+  items = s.items.map(x => ({...x}));
+  fuelLogs = s.fuelLogs.map(x => ({...x}));
+  maintLogs = [];
+  saveItems(); saveFuelLogs(); saveLogs();
   renderAll();
   switchScreen('home');
 }
 
 function resetAll(){
   if (!confirm('모든 차량/소모품/주유 데이터를 삭제할까요? 되돌릴 수 없어요.\n먼저 "내보내기"로 백업해두는 걸 권장해요.')) return;
-  localStorage.removeItem(KEYS.vehicle);
-  localStorage.removeItem(KEYS.items);
-  localStorage.removeItem(KEYS.fuel);
-  localStorage.removeItem(KEYS.logs);
+  Object.values(KEYS).forEach(k => localStorage.removeItem(k));
   localStorage.removeItem(BACKUP_KEY);
-  vehicle = null; items = []; fuelLogs = []; maintLogs = [];
+  vehicles = []; allItems = []; allFuel = []; allLogs = [];
+  selectVehicle(null);
   setBrand('');
   document.getElementById('vMakeModel').value = '';
   document.getElementById('vFuel').value = '';
@@ -1318,11 +1373,13 @@ function importData(input){
     }
     if (!confirm('지금 기기에 있는 기록을 백업 파일 내용으로 덮어쓸까요?')) return;
     const 편 = normalizeBackup(data);   // 2판 백업엔 차량 id도 교체 이력도 없다
-    vehicle = 편.vehicle;
-    items = 편.items;
-    fuelLogs = 편.fuelLogs;
-    maintLogs = 편.maintLogs;
-    save(KEYS.vehicle, vehicle); save(KEYS.items, items); save(KEYS.fuel, fuelLogs); save(KEYS.logs, maintLogs);
+    vehicles = 편.vehicle ? [편.vehicle] : [];
+    allItems = 편.items;
+    allFuel  = 편.fuelLogs;
+    allLogs  = 편.maintLogs;
+    save(KEYS.vehicles, vehicles);
+    save(KEYS.items, allItems); save(KEYS.fuel, allFuel); save(KEYS.logs, allLogs);
+    selectVehicle(편.vehicle ? 편.vehicle.id : null);
     markBackedUp();   // 방금 불러온 파일이 곧 최신 백업이다
     renderAll();
     alert('불러오기 완료!');
@@ -1546,10 +1603,10 @@ function saveMaintItem(){
       const it = items.find(i => i.id === aid);
       if (it) recordMaintLog({ id:'L'+stamp+'_'+n, name: it.name, date: data.lastDate, odo: data.lastKm, cost: 0 });
     });
-    save(KEYS.logs, maintLogs);
+    saveLogs();
   }
 
-  save(KEYS.items, items);
+  saveItems();
   closeMaintModal();
   renderAll();
 }
@@ -1560,7 +1617,7 @@ function deleteCurrentMaint(){
 function deleteMaintItem(id){
   if (!confirm('이 소모품 기록을 삭제할까요?')) return;
   items = items.filter(i=>i.id!==id);
-  save(KEYS.items, items);
+  saveItems();
   closeMaintModal();
   renderAll();
 }
@@ -1694,7 +1751,7 @@ function renderMaintLogList(){
 function deleteMaintLog(id){
   if (!confirm('이 교체 이력을 지울까요?\n유지비 그래프에서 빠집니다. 소모품의 마지막 교체 기록은 그대로 남아요.')) return;
   maintLogs = maintLogs.filter(l => l.id !== id);
-  save(KEYS.logs, maintLogs);
+  saveLogs();
   renderAll();
 }
 function sortedFuel(){ // 날짜 오름차순, 같은 날이면 주행거리 순
@@ -1718,18 +1775,23 @@ function saveFuel(){
   const full = document.getElementById('fuelFull').checked;
   if (!date || liters==null || cost==null || odo==null){ alert('모든 항목을 입력해주세요'); return; }
   if (liters <= 0){ alert(words().양 + '을 확인해주세요'); return; }
+  if (!vehicle){
+    const v = { id: newVehicleId(), brand:'', name:'', year:null, odo };
+    vehicles.push(v);
+    saveVehicles();
+    selectVehicle(v.id);
+  }
   fuelLogs.push({ id:'f'+Date.now(), date, liters, cost, odo, full });
-  save(KEYS.fuel, fuelLogs);
-  if (!vehicle){ vehicle = {brand:'', name:'', year:null, odo}; }
+  saveFuelLogs();
   if (odo > (vehicle.odo||0)) { vehicle.odo = odo; }
-  save(KEYS.vehicle, vehicle);
+  saveVehicles();
   closeFuelModal();
   renderAll();
 }
 function deleteFuel(id){
   if (!confirm('이 주유 기록을 삭제할까요?')) return;
   fuelLogs = fuelLogs.filter(f=>f.id!==id);
-  save(KEYS.fuel, fuelLogs);
+  saveFuelLogs();
   renderAll();
 }
 // 가득 주유 → 가득 주유 구간으로 계산. 사이에 낀 부분 주유는 주유량에 합산.
@@ -2411,6 +2473,50 @@ function selfTest(){
     a(EV_BRANDS.every(b => BRANDS_ALL.indexOf(b) !== -1), '전기차 브랜드도 목록에 있어야 함');
     a(new Set(BRANDS_ALL).size === BRANDS_ALL.length, '브랜드 중복 없음');
     a(Object.keys(BRAND_OIL).every(k => BRAND_OIL[k].official && BRAND_OIL[k].local && BRAND_OIL[k].note), '모든 브랜드에 공식/국내권장/설명이 있어야 함');
+
+    // ---- 다중 차량: 차마다 기록이 완전히 갈린다 ----
+    const 원다중 = { vehicles, activeId, allItems, allFuel, allLogs, vehicle, items, fuelLogs, maintLogs };
+    vehicles = [{ id:'vA', brand:'BMW', name:'320d', fuel:'diesel', odo:1000 },
+                { id:'vB', brand:'기아', name:'K5', fuel:'gas', odo:2000 }];
+    allItems = [{ id:'i1', name:'엔진오일', vehicleId:'vA' },
+                { id:'i2', name:'와이퍼',   vehicleId:'vB' }];
+    allFuel  = [{ id:'f1', date:'2026-09-01', liters:40, cost:70000, odo:1000, full:true, vehicleId:'vA' }];
+    allLogs  = [{ id:'L1', name:'엔진오일', date:'2026-09-01', odo:1000, cost:85000, vehicleId:'vA' }];
+
+    selectVehicle('vA');
+    a(vehicle.name === '320d', 'A를 고르면 A가 활성 차량이 된다');
+    a(items.length === 1 && items[0].name === '엔진오일', 'A의 소모품만 보인다');
+    a(fuelLogs.length === 1 && maintLogs.length === 1, 'A의 주유·이력만 보인다');
+
+    selectVehicle('vB');
+    a(vehicle.name === 'K5', 'B를 고르면 B가 활성 차량이 된다');
+    a(items.length === 1 && items[0].name === '와이퍼', 'B의 소모품만 보인다');
+    a(fuelLogs.length === 0 && maintLogs.length === 0, 'B는 주유·이력이 비어 있다');
+
+    // 저장은 활성 차량 몫만 갈아끼워야 한다
+    items.push({ id:'i3', name:'배터리' });
+    saveItems();
+    a(allItems.length === 3, '저장하면 전체 목록에 더해진다');
+    a(allItems.filter(x => x.vehicleId === 'vA').length === 1, '저장해도 A 기록은 그대로다');
+    a(items.every(x => x.vehicleId === 'vB'), '저장하면서 활성 차량 id가 찍힌다');
+
+    selectVehicle('vA');
+    a(items.length === 1 && items[0].name === '엔진오일', 'A로 돌아오면 A 기록만 보인다');
+
+    // 없는 id를 고르면 첫 번째 차로 떨어진다
+    selectVehicle('없는id');
+    a(activeId === 'vA', '없는 차를 고르면 첫 번째 차로 맞춘다');
+
+    // 차가 없으면 빈 상태
+    vehicles = [];
+    selectVehicle(null);
+    a(vehicle === null && items.length === 0, '차가 없으면 빈 상태가 된다');
+
+    vehicles = 원다중.vehicles; activeId = 원다중.activeId;
+    allItems = 원다중.allItems; allFuel = 원다중.allFuel; allLogs = 원다중.allLogs;
+    vehicle = 원다중.vehicle; items = 원다중.items;
+    fuelLogs = 원다중.fuelLogs; maintLogs = 원다중.maintLogs;
+
     a(localStorage.getItem(KEYS.items) === 검사전items, '검사는 저장소를 건드리지 않아야 한다');
     console.log('%c selfTest 통과 ', 'background:#2f7d4f;color:#fff');
     return true;
@@ -2420,6 +2526,7 @@ function selfTest(){
   }
 }
 
+selectVehicle(activeId);
 renderAll();
 switchScreen('home');
 if (location.search.indexOf('test') !== -1) selfTest();
