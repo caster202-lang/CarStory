@@ -108,7 +108,6 @@
   }
   .cluster > * { position:relative; }
   .cluster-head { display:flex; align-items:center; gap:11px; margin-bottom:18px; }
-  .cluster-head .brand-badge { width:40px; height:40px; font-size:15px; border-radius:13px; }
   .car { font-size:14.5px; font-weight:700; letter-spacing:-0.01em; }
   .car-sub { font-size:11.5px; color: var(--ink-dim); margin-top:3px; }
   .cluster .read { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; }
@@ -965,6 +964,13 @@ function vehicleTitle(){
   if (!vehicle) return '차량 미등록';
   const brand = vehicle.brand === '기타' ? '' : vehicle.brand;
   return (vehicle.name || '').trim() || brand || '차량 미등록';
+}
+
+// 칩이 없는 곳(인쇄물)에서 쓰는 전체 이름. 브랜드와 모델명을 함께 적는다.
+function vehicleFullName(){
+  if (!vehicle) return '차량 미등록';
+  const brand = vehicle.brand === '기타' ? '' : vehicle.brand;
+  return [brand, (vehicle.name || '').trim()].filter(Boolean).join(' ') || '차량 미등록';
 }
 
 function esc(s){
@@ -2076,7 +2082,7 @@ function buildPrintSheet(){
     : '<div class="none">' + words().행위 + ' 기록이 없습니다.</div>';
 
   return '<div class="p-head"><b>내 차 상태</b><span>카스토리 · ' + today + ' 기준</span></div>' +
-    '<div class="p-car"><div class="nm">' + (vehicle && vehicle.brand && vehicle.brand !== '기타' ? esc(vehicle.brand) + ' ' : '') + esc(vehicleTitle()) +
+    '<div class="p-car"><div class="nm">' + esc(vehicleFullName()) +
       (vehicle && vehicle.year ? ' · ' + vehicle.year + '년식' : '') + '</div>' +
       '<div class="odo">' + odo + '<i> km</i></div></div>' +
     '<h3>지금 확인할 것</h3>' + urgentRows +
@@ -2393,7 +2399,9 @@ function selfTest(){
     a(vehicleTitle() === 'BMW', '모델명이 없으면 브랜드로 대신한다');
     vehicle = { brand:'기타', name:'내 차', odo:100 };
     a(vehicleTitle() === '내 차', '기타 브랜드면 모델명만');
+    a(vehicleFullName() === '내 차', '인쇄용 전체 이름도 기타 브랜드는 빼고 적는다');
     vehicle = { brand:'제네시스', name:'G80', odo:100 };
+    a(vehicleFullName() === '제네시스 G80', '인쇄용 전체 이름은 브랜드와 모델명을 함께 적는다');
     renderHome();
     const 홈표시 = document.getElementById('homeBadgeWrap').innerHTML +
                    document.getElementById('homeVehicleName').textContent;
