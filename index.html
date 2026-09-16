@@ -2117,6 +2117,10 @@ function printStatus(){
 // ---------- 자체 점검: 주소 끝에 ?test 를 붙여서 열면 실행됨 ----------
 function selfTest(){
   const okVehicle = vehicle, okFuel = fuelLogs;
+  const 검사전items = localStorage.getItem(KEYS.items);
+  // 검사는 저장소를 건드리지 않는다. 안 막으면 ?test 한 번에 실제 기록이 날아간다.
+  const 진짜save = save;
+  save = function(){};
   const a = (cond, msg)=>{ if(!cond) throw new Error('selfTest 실패: ' + msg); };
   try {
     vehicle = {brand:'BMW', name:'320d', year:2021, odo:20000};
@@ -2400,9 +2404,11 @@ function selfTest(){
     a(EV_BRANDS.every(b => BRANDS_ALL.indexOf(b) !== -1), '전기차 브랜드도 목록에 있어야 함');
     a(new Set(BRANDS_ALL).size === BRANDS_ALL.length, '브랜드 중복 없음');
     a(Object.keys(BRAND_OIL).every(k => BRAND_OIL[k].official && BRAND_OIL[k].local && BRAND_OIL[k].note), '모든 브랜드에 공식/국내권장/설명이 있어야 함');
+    a(localStorage.getItem(KEYS.items) === 검사전items, '검사는 저장소를 건드리지 않아야 한다');
     console.log('%c selfTest 통과 ', 'background:#2f7d4f;color:#fff');
     return true;
   } finally {
+    save = 진짜save;
     vehicle = okVehicle; fuelLogs = okFuel;
   }
 }
