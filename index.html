@@ -20,6 +20,8 @@
     --warn: #e0912a;
     --danger: #e2564a;
     --danger-track: #f6cfca;
+    --chart-fuel: #3f92d8;
+    --chart-maint: #e8992b;
     --shadow: 0 1px 2px rgba(16,24,40,.04), 0 6px 16px rgba(16,24,40,.06);
     --accent: hsl(205 40% 40%);
     --accent-soft: hsl(205 46% 50% / 0.10);
@@ -39,6 +41,8 @@
     --warn: #e5a83f;
     --danger: #e86b5e;
     --danger-track: #4a2723;
+    --chart-fuel: #3f92d8;
+    --chart-maint: #c47c1c;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.28);
     --accent-ink: #111317;
   }
@@ -139,6 +143,25 @@
   }
   .stat span { display:block; font-size:11px; font-weight:600; color: var(--ink-dim); margin-bottom:7px; }
   .stat b { font-size:17px; font-weight:700; letter-spacing:-0.02em; }
+
+  /* ---------- 그래프 ---------- */
+  .chart-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .chart-card h4 {
+    margin:0 0 3px;
+    font-size:13px; font-weight:700; letter-spacing:-0.01em;
+  }
+  .chart-card .cap { font-size:11.5px; color: var(--ink-dim); margin-bottom:12px; }
+  .chart-legend { display:flex; gap:14px; margin-bottom:10px; }
+  .chart-legend span { display:flex; align-items:center; gap:6px; font-size:11.5px; color: var(--ink-dim); font-weight:600; }
+  .chart-legend i { width:10px; height:10px; border-radius:3px; flex:none; }
+  .chart-card svg { width:100%; height:auto; display:block; }
+  .chart-none { font-size:12.5px; color: var(--ink-dim); padding:18px 0; text-align:center; }
 
   /* ---------- 목록 ---------- */
   .list {
@@ -449,7 +472,7 @@
       </div>
 
       <div class="stats">
-        <div class="stat"><span>이번 달 주유비</span><b id="statMonthCost">–</b></div>
+        <div class="stat"><span>이번 달 유지비</span><b id="statMonthCost">–</b></div>
         <div class="stat"><span>평균 연비</span><b id="statAvgEff">–</b></div>
       </div>
 
@@ -474,6 +497,10 @@
 
     <!-- 주유 -->
     <section class="screen" id="screen-fuel">
+      <div class="sec">
+        <div class="sec-label">비용과 연비</div>
+        <div id="charts"></div>
+      </div>
       <div class="sec">
         <div class="sec-label">주유 기록</div>
         <div id="fuelList"></div>
@@ -564,6 +591,11 @@
         <option value="캐빈(에어컨) 필터">캐빈(에어컨) 필터</option>
       </select>
     </div>
+    <div class="field">
+      <label>교체 비용 (원)</label>
+      <input id="maintCost" type="number" placeholder="85000">
+      <p class="hint" style="margin:7px 0 0">함께 교체한 항목까지 합친 금액을 적으세요. 비워두셔도 됩니다.</p>
+    </div>
     <div id="brandGuide" class="guide" style="display:none"></div>
     <div class="field">
       <label>항목명</label>
@@ -579,6 +611,7 @@
         <input id="maintIntervalMonth" type="number" placeholder="12">
       </div>
     </div>
+    <button type="button" class="btn sm" onclick="fillToday()" style="margin-bottom:12px">오늘 교체했어요</button>
     <div class="field-row">
       <div class="field">
         <label>마지막 교체 시점(km)</label>
@@ -636,7 +669,7 @@
 <script>
 // ---------- 데이터 계층 (localStorage) ----------
 // 저장 키는 앱 이름이 바뀌어도 그대로 둔다. 바꾸면 기존에 저장된 기록을 못 읽는다.
-const KEYS = { vehicle:'mile_vehicle', items:'mile_items', fuel:'mile_fuel' };
+const KEYS = { vehicle:'mile_vehicle', items:'mile_items', fuel:'mile_fuel', logs:'mile_logs' };
 
 function load(key, fallback){
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
@@ -681,6 +714,9 @@ function numOf(id){
 let vehicle = load(KEYS.vehicle, null);
 let items = load(KEYS.items, []);
 let fuelLogs = load(KEYS.fuel, []);
+// 교체할 때마다 쌓이는 이력. 소모품 항목은 "마지막 교체"만 들고 있어서
+// 월별 유지비를 그리려면 이력이 따로 있어야 한다.
+let maintLogs = load(KEYS.logs, []);
 
 // 공통 기준 (기획서 6.1)
 const PRESETS = {
@@ -1068,7 +1104,8 @@ function resetAll(){
   localStorage.removeItem(KEYS.vehicle);
   localStorage.removeItem(KEYS.items);
   localStorage.removeItem(KEYS.fuel);
-  vehicle = null; items = []; fuelLogs = [];
+  localStorage.removeItem(KEYS.logs);
+  vehicle = null; items = []; fuelLogs = []; maintLogs = [];
   setBrand('');
   document.getElementById('vMakeModel').value = '';
   document.getElementById('vYear').value = '';
@@ -1078,7 +1115,7 @@ function resetAll(){
 
 // ---------- 데이터 백업 (localStorage 유실 대비) ----------
 function exportData(){
-  const payload = { app:'카스토리', version:1, exportedAt:new Date().toISOString(), vehicle, items, fuelLogs };
+  const payload = { app:'카스토리', version:2, exportedAt:new Date().toISOString(), vehicle, items, fuelLogs, maintLogs };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1104,7 +1141,8 @@ function importData(input){
     vehicle = data.vehicle || null;
     items = data.items;
     fuelLogs = data.fuelLogs;
-    save(KEYS.vehicle, vehicle); save(KEYS.items, items); save(KEYS.fuel, fuelLogs);
+    maintLogs = Array.isArray(data.maintLogs) ? data.maintLogs : [];  // 예전 백업엔 없다
+    save(KEYS.vehicle, vehicle); save(KEYS.items, items); save(KEYS.fuel, fuelLogs); save(KEYS.logs, maintLogs);
     renderAll();
     alert('불러오기 완료!');
   };
@@ -1123,8 +1161,9 @@ function openMaintModal(editId){
     document.getElementById('maintIntervalMonth').value = it.intervalMonth != null ? it.intervalMonth : '';
     document.getElementById('maintLastKm').value = it.lastKm != null ? it.lastKm : '';
     document.getElementById('maintLastDate').value = it.lastDate || '';
+    document.getElementById('maintCost').value = it.lastCost != null ? it.lastCost : '';
   } else {
-    ['maintName','maintIntervalKm','maintIntervalMonth','maintLastKm','maintLastDate'].forEach(id=>document.getElementById(id).value='');
+    ['maintName','maintIntervalKm','maintIntervalMonth','maintLastKm','maintLastDate','maintCost'].forEach(id=>document.getElementById(id).value='');
   }
   document.getElementById('maintDeleteBtn').style.display = editId ? 'inline-flex' : 'none';
   limitDateInput(document.getElementById('maintLastDate'));
@@ -1224,6 +1263,13 @@ function renderAlsoList(){
   ).join('');
 }
 
+// 오늘 교체한 걸로 빠르게 채우기
+function fillToday(){
+  document.getElementById('maintLastKm').value = vehicle && vehicle.odo != null ? vehicle.odo : '';
+  document.getElementById('maintLastDate').value = todayStr();
+  document.getElementById('maintCost').focus();
+}
+
 function saveMaintItem(){
   const name = document.getElementById('maintName').value.trim();
   if (!name) { alert('항목명을 입력해주세요'); return; }
@@ -1233,6 +1279,7 @@ function saveMaintItem(){
     intervalMonth: numOf('maintIntervalMonth'),
     lastKm: numOf('maintLastKm'),
     lastDate: fixDateValue(document.getElementById('maintLastDate').value, todayStr()) || null,
+    lastCost: numOf('maintCost'),
   };
   const editId = document.getElementById('maintEditId').value;
   // 이미 있는 이름으로 또 만들면 같은 항목이 두 개가 된다.
@@ -1241,6 +1288,9 @@ function saveMaintItem(){
   if (dup && !confirm('"' + name + '"은(는) 이미 등록돼 있어요.\n새로 만들지 않고 기존 항목에 이번 기록을 반영할까요?')) return;
 
   const targetId = editId || (dup ? dup.id : null);
+  const before = targetId ? items.find(i => i.id === targetId) : null;
+  const 교체일이_새로생김 = !!data.lastDate && data.lastDate !== (before ? before.lastDate : null);
+
   if (targetId){
     const idx = items.findIndex(i => i.id === targetId);
     items[idx] = {...items[idx], ...data};
@@ -1255,6 +1305,20 @@ function saveMaintItem(){
       ? {...i, lastKm: data.lastKm, lastDate: data.lastDate}
       : i);
   }
+
+  // 교체일이 새로 생겼거나 바뀌었을 때만 이력을 남긴다.
+  // 주기만 고치는 경우에는 쌓이지 않는다.
+  if (교체일이_새로생김){
+    const stamp = Date.now();
+    maintLogs.push({ id:'L'+stamp, name: data.name, date: data.lastDate, odo: data.lastKm, cost: data.lastCost || 0 });
+    // 같이 교체한 항목도 이력에 남기되, 비용은 위에서 합쳐 적었으므로 0으로 둔다
+    alsoIds.forEach((aid, n) => {
+      const it = items.find(i => i.id === aid);
+      if (it) maintLogs.push({ id:'L'+stamp+'_'+n, name: it.name, date: data.lastDate, odo: data.lastKm, cost: 0 });
+    });
+    save(KEYS.logs, maintLogs);
+  }
+
   save(KEYS.items, items);
   closeMaintModal();
   renderAll();
@@ -1429,12 +1493,132 @@ function renderFuelList(){
   }).join('') + '</div>';
 }
 
+// ---------- 그래프 ----------
+function recentMonths(n){
+  const out = [], now = new Date();
+  for (let i = n - 1; i >= 0; i--){
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push({
+      ym: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'),
+      label: (d.getMonth() + 1) + '월'
+    });
+  }
+  return out;
+}
+// 달마다 주유비와 교체비를 따로 합산한다
+function monthlyCost(n){
+  return recentMonths(n).map(m => ({
+    ym: m.ym,
+    label: m.label,
+    fuel: fuelLogs.filter(f => String(f.date).slice(0,7) === m.ym).reduce((a,f) => a + (f.cost || 0), 0),
+    maint: maintLogs.filter(l => String(l.date).slice(0,7) === m.ym).reduce((a,l) => a + (l.cost || 0), 0)
+  }));
+}
+function manwon(v){
+  const m = v / 10000;
+  return (m >= 100 ? Math.round(m) : Math.round(m * 10) / 10) + '';
+}
+
+// 월별 유지비 — 주유비 위에 교체비를 쌓은 막대. 값은 막대 위에 바로 적어서
+// 손가락으로 짚어볼 필요가 없게 한다(폰에는 마우스 올리기가 없다).
+function costChart(){
+  const data = monthlyCost(6);
+  const total = d => d.fuel + d.maint;
+  const max = Math.max.apply(null, data.map(total));
+  if (!max) return '<div class="chart-none">주유나 교체 비용을 기록하면 여기에 그려져요</div>';
+
+  const W = 320, H = 156, top = 22, bottom = 26;
+  const plotH = H - top - bottom, baseY = top + plotH;
+  const bw = 30, gap = (W - bw * data.length) / (data.length + 1);
+
+  const bars = data.map((d, i) => {
+    const x = gap + i * (bw + gap), t = total(d);
+    const fh = t ? (d.fuel / max) * plotH : 0;
+    const mh = t ? (d.maint / max) * plotH : 0;
+    let s = '';
+    if (fh > 0.5) s += '<rect x="' + x.toFixed(1) + '" y="' + (baseY - fh).toFixed(1) +
+      '" width="' + bw + '" height="' + fh.toFixed(1) + '" rx="' + (mh > 0.5 ? 0 : 3) + '" fill="var(--chart-fuel)"/>';
+    if (mh > 0.5) s += '<rect x="' + x.toFixed(1) + '" y="' + (baseY - fh - mh - 2).toFixed(1) +
+      '" width="' + bw + '" height="' + mh.toFixed(1) + '" rx="3" fill="var(--chart-maint)"/>';
+    if (t > 0) s += '<text x="' + (x + bw/2).toFixed(1) + '" y="' + (baseY - fh - mh - 8).toFixed(1) +
+      '" text-anchor="middle" font-size="10" font-weight="600" fill="var(--ink)">' + manwon(t) + '</text>';
+    s += '<text x="' + (x + bw/2).toFixed(1) + '" y="' + (baseY + 16) +
+      '" text-anchor="middle" font-size="10.5" fill="var(--ink-dim)">' + d.label + '</text>';
+    return s;
+  }).join('');
+
+  return '<div class="chart-legend">' +
+      '<span><i style="background:var(--chart-fuel)"></i>주유비</span>' +
+      '<span><i style="background:var(--chart-maint)"></i>교체비</span>' +
+    '</div>' +
+    '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="최근 6개월 월별 유지비">' +
+      '<line x1="0" y1="' + baseY + '" x2="' + W + '" y2="' + baseY + '" stroke="var(--line)" stroke-width="1"/>' +
+      bars +
+    '</svg>';
+}
+
+// 연비 추이 — 가득 주유한 구간마다의 연비
+function effChart(){
+  const pts = sortedFuel()
+    .map(f => ({ date: f.date, v: fuelEfficiencyFor(f) }))
+    .filter(p => p.v != null)
+    .map(p => ({ date: p.date, v: parseFloat(p.v) }))
+    .slice(-10);
+  if (pts.length < 2) return '<div class="chart-none">가득 주유를 두 번 이상 기록하면 연비 추이가 보여요</div>';
+
+  const W = 320, H = 150, top = 16, bottom = 24, left = 34, right = 12;
+  const plotW = W - left - right, plotH = H - top - bottom;
+  const vals = pts.map(p => p.v);
+  const lo = Math.floor(Math.min.apply(null, vals) - 1);
+  const hi = Math.ceil(Math.max.apply(null, vals) + 1);
+  const y = v => top + plotH - ((v - lo) / (hi - lo)) * plotH;
+  const x = i => left + (pts.length === 1 ? plotW/2 : (i / (pts.length - 1)) * plotW);
+
+  const grid = [lo, hi].map(v =>
+    '<line x1="' + left + '" y1="' + y(v).toFixed(1) + '" x2="' + (W - right) + '" y2="' + y(v).toFixed(1) +
+    '" stroke="var(--line)" stroke-width="1"/>' +
+    '<text x="' + (left - 6) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end" font-size="10" fill="var(--ink-dim)">' + v + '</text>'
+  ).join('');
+
+  const path = pts.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.v).toFixed(1)).join(' ');
+  const dots = pts.map((p, i) =>
+    '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p.v).toFixed(1) + '" r="4" fill="var(--chart-fuel)" stroke="var(--surface)" stroke-width="2"/>'
+  ).join('');
+  const lastIdx = pts.length - 1;
+  const label = '<text x="' + (x(lastIdx) - 6).toFixed(1) + '" y="' + (y(pts[lastIdx].v) - 10).toFixed(1) +
+    '" text-anchor="end" font-size="11" font-weight="700" fill="var(--ink)">' + pts[lastIdx].v.toFixed(1) + 'km/L</text>';
+
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="최근 연비 추이">' +
+      grid +
+      '<path d="' + path + '" fill="none" stroke="var(--chart-fuel)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+      dots + label +
+      '<text x="' + left + '" y="' + (H - 6) + '" font-size="10" fill="var(--ink-dim)">' + pts[0].date + '</text>' +
+      '<text x="' + (W - right) + '" y="' + (H - 6) + '" text-anchor="end" font-size="10" fill="var(--ink-dim)">' + pts[lastIdx].date + '</text>' +
+    '</svg>';
+}
+
+function renderCharts(){
+  const el = document.getElementById('charts');
+  if (!el) return;
+  const m = monthlyCost(6);
+  const thisMonth = m[m.length - 1];
+  el.innerHTML =
+    '<div class="chart-card"><h4>월별 유지비</h4>' +
+      '<div class="cap">최근 6개월 · 단위 만원' +
+      (thisMonth ? ' · 이번 달 ' + (thisMonth.fuel + thisMonth.maint).toLocaleString() + '원' : '') + '</div>' +
+      costChart() + '</div>' +
+    '<div class="chart-card"><h4>연비 추이</h4>' +
+      '<div class="cap">가득 주유한 구간마다의 연비 (km/L)</div>' +
+      effChart() + '</div>';
+}
+
 // ---------- 홈 ----------
+// 이번 달 유지비 = 주유비 + 교체비
 function monthCost(){
   const ym = new Date().toISOString().slice(0,7);
-  const sum = fuelLogs
-    .filter(f => String(f.date).slice(0,7) === ym)
-    .reduce((a,f) => a + (f.cost || 0), 0);
+  const fuel = fuelLogs.filter(f => String(f.date).slice(0,7) === ym).reduce((a,f) => a + (f.cost || 0), 0);
+  const maint = maintLogs.filter(l => String(l.date).slice(0,7) === ym).reduce((a,l) => a + (l.cost || 0), 0);
+  const sum = fuel + maint;
   return sum ? sum.toLocaleString() + '원' : '–';
 }
 // 첫 만땅부터 마지막 만땅까지를 한 구간으로 본 전체 평균 연비
@@ -1496,6 +1680,7 @@ function renderHome(){
 function renderAll(){
   paintThemeIcon();
   applyAccent();
+  renderCharts();
   renderVehicleForm();
   renderMaintList();
   renderFuelList();
@@ -1542,12 +1727,13 @@ function buildPrintSheet(){
 
   // ② 중고차 판매·보관용 — 소모품 전체 이력
   const allRows = items.length
-    ? '<table><thead><tr><th>항목</th><th>교체 주기</th><th>마지막 교체</th><th>상태</th></tr></thead><tbody>' +
+    ? '<table><thead><tr><th>항목</th><th>교체 주기</th><th>마지막 교체</th><th class="num">비용</th><th>상태</th></tr></thead><tbody>' +
       [...items].sort((a,b) => {
         const ra = maintStatusOf(a).rank, rb = maintStatusOf(b).rank;
         return (ra == null ? Infinity : ra) - (rb == null ? Infinity : rb);
       }).map(it => '<tr><td>' + esc(it.name) + '</td><td>' + cycleText(it) + '</td><td>' +
-        lastText(it) + '</td><td>' + STATUS_LABEL[maintStatusOf(it).cls] + '</td></tr>').join('') +
+        lastText(it) + '</td><td class="num">' + (it.lastCost ? it.lastCost.toLocaleString() + '원' : '-') +
+        '</td><td>' + STATUS_LABEL[maintStatusOf(it).cls] + '</td></tr>').join('') +
       '</tbody></table>'
     : '<div class="none">등록된 소모품이 없습니다.</div>';
 
@@ -1664,6 +1850,16 @@ function selfTest(){
     vehicle = 원차; items = 원항목; fuelLogs = 원주유;
     a(급한것.length > 0 && 급한것[0].name === '캐빈(에어컨) 필터', '가장 급한 항목이 맨 앞에');
     a(주유비 > 0 && 주유비 === sp.fuelLogs.reduce((x,f) => x + (f.cost || 0), 0), '총 주유비 합계');
+    // 월별 집계 — 이번 달이 맨 끝, 6개월치
+    const 원로그 = maintLogs;
+    maintLogs = [{ id:'t1', name:'엔진오일', date: todayStr(), odo:1, cost: 85000 }];
+    const 달들 = monthlyCost(6);
+    a(달들.length === 6, '최근 6개월치를 뽑는다');
+    a(달들[5].ym === todayStr().slice(0,7), '맨 끝이 이번 달');
+    a(달들[5].maint === 85000, '이번 달 교체비가 합산된다');
+    a(달들[0].maint === 0, '기록 없는 달은 0');
+    maintLogs = 원로그;
+    a(manwon(165000) === '16.5' && manwon(1250000) === '125', '금액은 만원 단위로 줄여 표시');
     a(종이.indexOf('지금 확인할 것') !== -1 && 종이.indexOf('소모품 관리 이력') !== -1 && 종이.indexOf('주유 기록') !== -1, '인쇄물에 세 구역이 모두 있어야 함');
     a(종이.indexOf('제네시스 G80') !== -1, '인쇄물에 차량 이름이 있어야 함');
     a(Object.keys(PRESETS).every(n => ITEM_ICON[itemKind(n)]), '모든 프리셋에 아이콘이 있어야 함');
