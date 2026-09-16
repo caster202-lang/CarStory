@@ -1269,6 +1269,14 @@ function saveVehicle(){
     selectVehicle(editId);
   } else {
     const v = { id: newVehicleId(), ...data };
+    // 차를 등록하기 전에 넣은 기록은 주인이 없다. 첫 차가 생기면 그 차로 옮긴다. 안 옮기면 화면에서 사라진다.
+    if (!activeId){
+      const 붙이기 = x => !x.vehicleId ? {...x, vehicleId: v.id} : x;
+      allItems = allItems.map(붙이기);
+      allFuel  = allFuel.map(붙이기);
+      allLogs  = allLogs.map(붙이기);
+      save(KEYS.items, allItems); save(KEYS.fuel, allFuel); save(KEYS.logs, allLogs);
+    }
     vehicles.push(v);
     saveVehicles();
     selectVehicle(v.id);
@@ -1288,7 +1296,7 @@ function deleteActiveVehicle(){
   if (!vehicle) return;
   const id = vehicle.id;
   const c = deleteVehicleCounts(id);
-  const 이름 = vehicleTitle();
+  const 이름 = vehicleFullName();
   if (!confirm(이름 + '을(를) 지울까요?\n소모품 ' + c.items + '건 · 주유 ' + c.fuel +
                '건 · 교체 이력 ' + c.logs + '건이 함께 지워집니다. 되돌릴 수 없어요.')) return;
   vehicles = vehicles.filter(v => v.id !== id);
@@ -1429,8 +1437,9 @@ function backupPayload(){
 }
 // 2판(차량 한 대, id 없음)과 3판을 모두 같은 모양으로 펴서 돌려준다
 function normalizeBackup(data){
-  const 목록 = Array.isArray(data.vehicles) && data.vehicles.length
-    ? data.vehicles.map(v => ({...v, id: v.id || newVehicleId()}))
+  const 걸러진 = Array.isArray(data.vehicles) ? data.vehicles.filter(v => v && typeof v === 'object') : [];
+  const 목록 = 걸러진.length
+    ? 걸러진.map(v => ({...v, id: v.id || newVehicleId()}))
     : (data.vehicle ? [{...data.vehicle, id: data.vehicle.id || newVehicleId()}] : []);
   const 기본 = 목록[0] ? 목록[0].id : null;
   const 활성 = 목록.some(v => v.id === data.activeId) ? data.activeId : 기본;
@@ -2259,7 +2268,9 @@ function printStatus(){
 
 // ---------- 자체 점검: 주소 끝에 ?test 를 붙여서 열면 실행됨 ----------
 function selfTest(){
-  const okVehicle = vehicle, okFuel = fuelLogs;
+  // 검사는 전역을 마음대로 바꾼다. 중간에 실패해도 finally에서 전부 되돌려야
+  // 사용자가 이어서 저장할 때 검사 데이터가 실제 저장소에 들어가지 않는다.
+  const 원상태 = { vehicles, activeId, allItems, allFuel, allLogs, vehicle, items, fuelLogs, maintLogs };
   const 검사전items = localStorage.getItem(KEYS.items);
   // 검사는 저장소를 건드리지 않는다. 안 막으면 ?test 한 번에 실제 기록이 날아간다.
   const 진짜save = save;
@@ -2466,6 +2477,10 @@ function selfTest(){
     const 왕복 = normalizeBackup(JSON.parse(JSON.stringify(backupPayload())));
     a(왕복.vehicles.map(v => v.id).join() === 'vA,vB', '문자열로 왕복해도 두 대가 순서대로 남는다');
     a(왕복.items.filter(x => x.vehicleId === 'vB').length === 1, '문자열로 왕복해도 차마다 기록이 갈린다');
+
+    const 이상한 = normalizeBackup({ version:3, vehicles:[null, 'x', { id:'vQ', brand:'BMW', name:'X3', odo:1 }],
+                                      items:[], fuelLogs:[], maintLogs:[] });
+    a(이상한.vehicles.length === 1 && 이상한.vehicles[0].id === 'vQ', '백업의 차량 목록에서 객체가 아닌 항목은 버린다');
 
     vehicles = 원백업.vehicles; activeId = 원백업.activeId;
     allItems = 원백업.allItems; allFuel = 원백업.allFuel; allLogs = 원백업.allLogs;
@@ -2694,6 +2709,22 @@ function selfTest(){
     window.confirm = 원confirm2;
     a(vehicles.length === 0 && vehicle === null, '마지막 차를 지우면 빈 상태가 된다');
 
+    // 차를 등록하기 전에 넣은 기록은 첫 차가 생기면 그 차 것이 된다
+    vehicles = []; allItems = []; allFuel = []; allLogs = [];
+    selectVehicle(null);
+    items.push({ id:'i0', name:'와이퍼' });
+    saveItems();
+    a(allItems.length === 1 && !allItems[0].vehicleId, '차가 없을 때 넣은 기록은 주인이 없다');
+    document.getElementById('vEditId').value = '';
+    document.getElementById('vBrand').value = '기아';
+    document.getElementById('vMakeModel').value = 'K5';
+    document.getElementById('vFuel').value = 'gas';
+    document.getElementById('vYear').value = '';
+    document.getElementById('vOdo').value = '10';
+    saveVehicle();
+    a(items.length === 1 && items[0].name === '와이퍼', '첫 차를 등록하면 그 전에 넣은 기록이 그 차에 보인다');
+    a(allItems.every(x => x.vehicleId === vehicle.id), '주인 없던 기록에 첫 차 id가 붙는다');
+
     vehicles = 원다중.vehicles; activeId = 원다중.activeId;
     allItems = 원다중.allItems; allFuel = 원다중.allFuel; allLogs = 원다중.allLogs;
     vehicle = 원다중.vehicle; items = 원다중.items;
@@ -2703,8 +2734,12 @@ function selfTest(){
     console.log('%c selfTest 통과 ', 'background:#2f7d4f;color:#fff');
     return true;
   } finally {
+    vehicles = 원상태.vehicles; activeId = 원상태.activeId;
+    allItems = 원상태.allItems; allFuel = 원상태.allFuel; allLogs = 원상태.allLogs;
+    vehicle = 원상태.vehicle; items = 원상태.items;
+    fuelLogs = 원상태.fuelLogs; maintLogs = 원상태.maintLogs;
     save = 진짜save;
-    vehicle = okVehicle; fuelLogs = okFuel;
+    renderAll();
   }
 }
 
