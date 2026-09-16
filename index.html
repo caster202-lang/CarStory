@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>카스토리 — 내 차 관리</title>
-<script>try{var _t=localStorage.getItem('mile_theme');if(_t)document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
+<script>try{var _t=localStorage.getItem('carstory_theme');if(_t)document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
@@ -718,8 +718,9 @@
 
 <script>
 // ---------- 데이터 계층 (localStorage) ----------
-// 저장 키는 앱 이름이 바뀌어도 그대로 둔다. 바꾸면 기존에 저장된 기록을 못 읽는다.
-const KEYS = { vehicle:'mile_vehicle', items:'mile_items', fuel:'mile_fuel', logs:'mile_logs' };
+// 저장 키. 오픈 전이라 예전 mile_* 키를 읽어오는 코드는 두지 않는다.
+// 오픈한 뒤에는 이 이름을 바꾸면 안 된다. 바꾸는 순간 사용자가 쌓은 기록을 못 읽는다.
+const KEYS = { vehicle:'carstory_vehicle', items:'carstory_items', fuel:'carstory_fuel', logs:'carstory_logs' };
 
 function load(key, fallback){
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
@@ -992,7 +993,7 @@ function esc(s){
 
 // ---------- 밝은 화면 / 어두운 화면 ----------
 // 저장된 값이 없으면 기기 설정을 따라간다. 버튼을 한 번 누르면 그때부터 고정.
-const THEME_KEY = 'mile_theme';
+const THEME_KEY = 'carstory_theme';
 const ICON_SUN = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M4.3 4.3l1.6 1.6M18.1 18.1l1.6 1.6M2.6 12h2.2M19.2 12h2.2M4.3 19.7l1.6-1.6M18.1 5.9l1.6-1.6"/></svg>';
 const ICON_MOON = '<svg viewBox="0 0 24 24"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4 8.3 8.3 0 1 0 20 14.6z"/></svg>';
 
@@ -1256,7 +1257,7 @@ function resetAll(){
 
 // ---------- 데이터 백업 (localStorage 유실 대비) ----------
 // 마지막으로 백업한 날. 데이터가 아니라 습관에 대한 기록이라 KEYS와 따로 둔다.
-const BACKUP_KEY = 'mile_backup';
+const BACKUP_KEY = 'carstory_backup';
 const BACKUP_DAYS = 30;
 function markBackedUp(){
   try { localStorage.setItem(BACKUP_KEY, todayStr()); } catch(e){}
@@ -2387,6 +2388,10 @@ function selfTest(){
     a(예시.items.some(it => it.note), '예시 데이터에 메모가 들어 있어야 함');
     a(예시.items.some(it => isTuning(it.name)), '예시 데이터에 튜닝 항목이 들어 있어야 함');
     a(상태들.has('danger') && 상태들.has('warn') && 상태들.has('ok') && 상태들.has('muted'), '예시 데이터에 상태 4가지가 모두 나와야 함');
+    // 저장 키는 앱 이름(carstory)에 맞춘다
+    a(Object.values(KEYS).every(k => k.indexOf('carstory_') === 0), '데이터 키는 모두 carstory_로 시작한다');
+    a(THEME_KEY.indexOf('carstory_') === 0, '화면 모드 키도 carstory_');
+    a(BACKUP_KEY.indexOf('carstory_') === 0, '백업 기록 키도 carstory_');
     a(['dark','light'].indexOf(currentTheme()) !== -1, '화면 모드는 dark/light 중 하나');
     a(Object.values(KEYS).indexOf(THEME_KEY) === -1, '전체 초기화를 해도 화면 모드 설정은 남아야 함');
     a(fmtCycle({km:15000, month:12}) === '15,000km / 12개월', '주기 표기');
