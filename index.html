@@ -1386,9 +1386,12 @@ const TOGETHER = { '엔진오일': ['오일필터'], '오일필터': ['엔진오
 
 // 같이 교체할 후보 — 지금 쓰고 있는 항목 자신과 이름이 같은 항목은 빼고,
 // 정비 흐름 순서로 정렬한다 (엔진오일 묶음이 앞)
+// 교체 주기가 있는 항목만 후보로 둔다. 언더코팅·머플러처럼 한 번 하고 끝나는 것은
+// 같이 갈 일이 거의 없어서 매번 후보에 뜨면 목록만 길어진다.
+// 주기를 넣으면 다시 후보에 나오므로 사용자가 직접 조절할 수 있다.
 function alsoCandidates(editId, name){
   return items
-    .filter(i => i.id !== editId && i.name !== name)
+    .filter(i => i.id !== editId && i.name !== name && (i.intervalKm || i.intervalMonth))
     .sort((a,b) => orderIndex(a.name) - orderIndex(b.name));
 }
 // 유종이 정해져 있으면 그에 맞는 항목만 고를 수 있게 한다
@@ -1545,6 +1548,16 @@ function maintLine(it){
 }
 
 // 남은 수명 게이지 — 연료계처럼 남은 만큼 채운다. 지났으면 가득 빨강.
+// 게이지를 못 그리는 항목(교체 주기가 없는 항목)에 무엇을 적을지 정한다.
+// 주기가 없어도 "언제 했는지"는 남겨야 한다 — 언더코팅·튜닝처럼 한 번 하고 끝나는 것들.
+function recordText(it){
+  const 주기있음 = !!(it.intervalKm || it.intervalMonth);
+  const 기록있음 = it.lastKm != null || !!it.lastDate;
+  if (!주기있음 && 기록있음) return { meta: lastText(it), hint: null };
+  if (주기있음 && !기록있음)  return { meta: '기록 필요', hint: '마지막 교체 시점을 입력하면 남은 양이 보여요' };
+  return { meta: '기록 없음', hint: '교체 주기나 교체 시점을 입력해주세요' };
+}
+
 function maintRow(it, clickable){
   const s = maintStatusOf(it);
   const tone = (s.cls === 'danger' || s.cls === 'warn') ? ' ' + s.cls : '';
@@ -1552,16 +1565,17 @@ function maintRow(it, clickable){
     ? '<button class="row-item" onclick="openMaintModal(\'' + it.id + '\')">'
     : '<div class="row-item static">';
   // 정상이면 항목 고유 색, 주의·위험이면 경고색이 게이지를 덮는다
+  const rec = s.pct != null ? null : recordText(it);
   const bar = s.pct != null
     ? '<div class="gauge' + (s.cls === 'danger' ? ' spent' : '') + '">' +
       '<i class="' + (s.cls === 'ok' ? '' : s.cls) + '" style="width:' + s.pct + '%' +
       (s.cls === 'ok' ? ';background:' + itemColor(it.name) : '') + '"></i></div>'
-    : '<div class="row-sub">마지막 교체 시점을 입력하면 남은 양이 보여요</div>';
+    : (rec.hint ? '<div class="row-sub">' + rec.hint + '</div>' : '');
   return open +
     '<div class="row-main">' + itemChip(it.name) +
     '<div class="row-text">' +
     '<div class="row-top"><span class="row-name">' + esc(it.name) + '</span>' +
-    '<span class="row-meta' + tone + '">' + (s.pct != null ? maintLine(it) : '기록 필요') + '</span></div>' +
+    '<span class="row-meta' + tone + '">' + (s.pct != null ? maintLine(it) : rec.meta) + '</span></div>' +
     bar +
     '</div></div>' +
     (it.note ? '<div class="row-note">' + esc(it.note) + '</div>' : '') +
@@ -1942,7 +1956,7 @@ function buildPrintSheet(){
         (it.note ? '<br><span style="font-size:8.5pt;color:#555">' + esc(it.note) + '</span>' : '') +
         '</td><td>' + cycleText(it) + '</td><td>' +
         lastText(it) + '</td><td class="num">' + (it.lastCost ? it.lastCost.toLocaleString() + '원' : '-') +
-        '</td><td>' + STATUS_LABEL[maintStatusOf(it).cls] + '</td></tr>').join('') +
+        '</td><td>' + (maintStatusOf(it).cls === 'muted' ? recordText(it).meta : STATUS_LABEL[maintStatusOf(it).cls]) + '</td></tr>').join('') +
       '</tbody></table>'
     : '<div class="none">등록된 소모품이 없습니다.</div>';
 
@@ -2007,6 +2021,11 @@ function selfTest(){
     a(maintStatusOf({intervalKm:45000, lastKm:10000}).cls === 'ok', '주기 긴 항목은 15% 남아도 아직 ok');
     vehicle.odo = 20000;
     a(maintStatusOf({intervalKm:null, lastKm:null}).cls === 'muted', '기록 없으면 muted');
+    // 주기가 없어도 언제 했는지는 보여줘야 한다 (언더코팅처럼 한 번 하고 끝나는 항목)
+    a(recordText({intervalKm:null, intervalMonth:null, lastKm:48200, lastDate:'2026-09-16'}).meta === '48,200km · 2026-09-16', '주기가 없으면 언제 했는지 표시');
+    a(recordText({intervalKm:null, intervalMonth:null, lastKm:48200, lastDate:'2026-09-16'}).hint === null, '이미 기록했으면 입력하라는 말이 안 나와야 함');
+    a(recordText({intervalKm:10000, intervalMonth:null, lastKm:null, lastDate:null}).meta === '기록 필요', '주기는 있는데 기록이 없으면 기록 필요');
+    a(recordText({intervalKm:null, intervalMonth:null, lastKm:null, lastDate:null}).meta === '기록 없음', '둘 다 없으면 기록 없음');
     // 게이지와 글자가 같은 판정을 쓰는지 (예전엔 서로 달랐음)
     a(maintStatusOf({intervalKm:45000, lastKm:0}).pct === 56, '남은 비율이 게이지 폭이 된다');
     // 시기가 지난 항목: 게이지는 가득 차지만 순서로는 가장 급해야 한다
@@ -2073,8 +2092,14 @@ function selfTest(){
     a(FREQUENT_SET.every(n => PRESETS[n]), '자주 교체 묶음은 모두 프리셋에 있어야 함');
     a(FREQUENT_SET.every((n, i) => orderIndex(n) === i), '자주 교체 묶음이 목록 앞쪽에 순서대로 모여 있어야 함');
     const 원items2 = items;
-    items = [{id:'z', name:'타이어'}, {id:'y', name:'오일필터'}, {id:'x', name:'엔진오일'}];
+    items = [
+      {id:'z', name:'타이어',   intervalKm:45000},
+      {id:'y', name:'오일필터', intervalKm:10000},
+      {id:'x', name:'엔진오일', intervalKm:10000},
+      {id:'w', name:'언더코팅', intervalKm:null, intervalMonth:null},
+    ];
     a(alsoCandidates('', '').map(i => i.name).join(',') === '엔진오일,오일필터,타이어', '같이 교체 목록이 교체 빈도 순서로 정렬');
+    a(alsoCandidates('', '').every(i => i.name !== '언더코팅'), '교체 주기가 없는 항목은 후보에서 빠진다');
     items = 원items2;
     // 날짜 칸에 숫자를 이어서 치면 연도가 6자리가 되던 문제
     a(fixDateValue('202609-09-16', '2026-09-16') === '2026-09-16', '6자리 연도는 앞 4자리만 남긴다');
@@ -2086,7 +2111,7 @@ function selfTest(){
     a(TOGETHER['엔진오일'].indexOf('오일필터') !== -1, '엔진오일을 갈면 오일필터가 함께 체크돼야 함');
     // 같이 교체 목록에 자기 자신이나 같은 이름이 끼어들면 안 된다
     const 원래items = items;
-    items = [{id:'a', name:'엔진오일'}, {id:'b', name:'오일필터'}];
+    items = [{id:'a', name:'엔진오일', intervalKm:10000}, {id:'b', name:'오일필터', intervalKm:10000}];
     a(alsoCandidates('', '오일필터').length === 1, '같은 이름 항목은 같이 교체 목록에서 빠져야 함');
     a(alsoCandidates('a', '엔진오일').length === 1, '수정 중인 항목 자신도 빠져야 함');
     a(alsoCandidates('', '와이퍼').length === 2, '겹치지 않으면 모두 후보');
